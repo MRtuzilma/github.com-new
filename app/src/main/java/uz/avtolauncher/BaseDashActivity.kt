@@ -79,6 +79,8 @@ abstract class BaseDashActivity : Activity() {
     protected lateinit var pal: LauncherTheme.Palette
     protected var hasWallpaper = false
     protected val themeReady: Boolean get() = ::pal.isInitialized
+    /** Ekran bo'lingan rejimdami (Android 7+). */
+    protected val inMultiWindow: Boolean get() = Build.VERSION.SDK_INT >= 24 && isInMultiWindowMode
     private var appliedDay: Boolean? = null
 
     // ---------------- Hayot sikli ----------------
@@ -124,7 +126,7 @@ abstract class BaseDashActivity : Activity() {
         loadWallpaper()
         Weather.cached(this)?.let { weatherText.text = Weather.describe(it) }
 
-        if (!hasLocationPermission()) {
+        if (!hasLocationPermission() && Build.VERSION.SDK_INT >= 23) {
             requestPermissions(
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
                 REQ_LOCATION
@@ -247,7 +249,7 @@ abstract class BaseDashActivity : Activity() {
             "Fon rasmini tanlash",
             "Fon rasmini olib tashlash"
         )
-        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Ko'rinish")
             .setItems(items) { _, which ->
                 when (which) {
@@ -264,7 +266,7 @@ abstract class BaseDashActivity : Activity() {
     }
 
     private fun pickAccent() {
-        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Rang")
             .setSingleChoiceItems(
                 LauncherTheme.ACCENT_NAMES.toTypedArray(),
@@ -279,7 +281,7 @@ abstract class BaseDashActivity : Activity() {
     }
 
     private fun pickMode() {
-        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Rejim")
             .setSingleChoiceItems(LauncherTheme.MODE_NAMES.toTypedArray(), LauncherTheme.mode(this)) { d, which ->
                 LauncherTheme.setMode(this, which)
@@ -431,7 +433,7 @@ abstract class BaseDashActivity : Activity() {
 
     // ---------------- GPS: spidometr va kompas ----------------
 
-    private fun hasLocationPermission() =
+    private fun hasLocationPermission() = Build.VERSION.SDK_INT < 23 ||
         checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {

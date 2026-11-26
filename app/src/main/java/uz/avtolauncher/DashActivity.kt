@@ -55,7 +55,7 @@ class DashActivity : BaseDashActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_START_NAV, false) && !isInMultiWindowMode) {
+        if (intent.getBooleanExtra(EXTRA_START_NAV, false) && !inMultiWindow) {
             helpShown = false
             launchNavigator()
         }
@@ -64,7 +64,7 @@ class DashActivity : BaseDashActivity() {
     override fun onResume() {
         super.onResume()
         // Navigator yoniga emas, butun ekranga ochilgan bo'lsa — qo'lda qilishni tushuntiramiz
-        if (waitingForSplit && !isInMultiWindowMode && !helpShown) {
+        if (waitingForSplit && !inMultiWindow && !helpShown) {
             waitingForSplit = false
             showManualHelp()
         }
@@ -86,9 +86,9 @@ class DashActivity : BaseDashActivity() {
 
     private fun launchNavigator() {
         val i = navigatorIntent() ?: return
-        if (Build.VERSION.SDK_INT >= 32 || isInMultiWindowMode) {
+        if (Build.VERSION.SDK_INT >= 32 || inMultiWindow) {
             i.addFlags(Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT or Intent.FLAG_ACTIVITY_NEW_TASK)
-            waitingForSplit = !isInMultiWindowMode
+            waitingForSplit = !inMultiWindow
             try {
                 startActivity(i)
             } catch (e: Exception) {
@@ -102,7 +102,7 @@ class DashActivity : BaseDashActivity() {
 
     private fun showManualHelp() {
         helpShown = true
-        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Ekranni bo'lish")
             .setMessage(
                 "Planshet Navigator'ni avtomatik yonma-yon qo'ya olmadi. Qo'lda shunday qiling:\n\n" +

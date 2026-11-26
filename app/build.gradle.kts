@@ -9,10 +9,21 @@ android {
 
     defaultConfig {
         applicationId = "uz.avtolauncher"
-        minSdk = 26
+        minSdk = 21
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
+    }
+
+    // Doimiy sinov imzosi: har bir yangi versiya eskisining ustidan o'rnatiladi.
+    // (Sotishdan oldin alohida, maxfiy release kaliti qo'yiladi.)
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {

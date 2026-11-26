@@ -28,8 +28,10 @@ class SpeedGaugeView @JvmOverloads constructor(
     private var shown = 0f
     private var animator: ValueAnimator? = null
 
-    private var accent = context.getColor(R.color.accent)
-    private var dim = context.getColor(R.color.text_dim)
+    @Suppress("DEPRECATION")
+    private var accent = context.resources.getColor(R.color.accent)
+    @Suppress("DEPRECATION")
+    private var dim = context.resources.getColor(R.color.text_dim)
 
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
