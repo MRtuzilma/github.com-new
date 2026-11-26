@@ -50,4 +50,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v2.3.${{ github.run_number }}" AvtoLauncher.apk --title "Avto Launcher v2.3.${{ github.run_number }}" --notes "Planshetga o'rnatish uchun AvtoLauncher.apk faylini yuklab oling. BT Ekran v4.3 launcher ichida." --latest
+          gh release create "v2.4.${{ github.run_number }}" AvtoLauncher.apk --title "Avto Launcher v2.4.${{ github.run_number }}" --notes "Planshetga o'rnatish uchun AvtoLauncher.apk faylini yuklab oling. BT Ekran v4.3 launcher ichida." --latest

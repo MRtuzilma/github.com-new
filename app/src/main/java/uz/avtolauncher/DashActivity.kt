@@ -88,6 +88,10 @@ class DashActivity : Activity() {
     private lateinit var btnBtTrip: TextView
     private lateinit var videoBtns: View
     private var tripMode = false
+    private lateinit var btnNav: ImageButton
+    private lateinit var btnRestore: TextView
+    private lateinit var btnRestoreNav: TextView
+    private lateinit var restoreBar: View
     private val statViews = HashMap<String, TextView>()
 
     private val handler = Handler(Looper.getMainLooper())
@@ -153,6 +157,20 @@ class DashActivity : Activity() {
         btnBt = findViewById(R.id.btnBt)
         btnBtTrip = findViewById(R.id.btnBtTrip)
         videoBtns = findViewById(R.id.videoBtns)
+        btnNav = findViewById(R.id.btnNav)
+        btnRestore = findViewById(R.id.btnRestore)
+        btnRestoreNav = findViewById(R.id.btnRestoreNav)
+        restoreBar = findViewById(R.id.restoreBar)
+
+        // Navigator yopilib qolsa — qaytarish
+        btnNav.setOnClickListener { bringNavigatorBack() }
+        btnRestoreNav.setOnClickListener { bringNavigatorBack() }
+        // Oddiy ko'rinishga qaytish
+        btnRestore.setOnClickListener {
+            setExpanded(false)
+            setTripMode(false)
+        }
+        findViewById<View>(R.id.btnExitFull).setOnClickListener { hideCustomView() }
 
         // Spidometrga bosilsa — safar rejimi (katta tezlik + statistika); yana bosilsa — qaytadi
         gauge.setOnClickListener { setTripMode(true) }
@@ -239,6 +257,7 @@ class DashActivity : Activity() {
 
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: android.content.res.Configuration) {
         super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        updateRestoreBar()
         if (isInMultiWindowMode) {
             waitingForSplit = false
             prefs().edit().putBoolean("split_failed", false).apply()
@@ -349,12 +368,17 @@ class DashActivity : Activity() {
         val cm = NeuDrawable.margin(dpf(cardDepth)).toInt()
         videoCard.background = neu(NeuDrawable.RECT, 26, cardDepth, NeuDrawable.RAISED)
         videoCard.setPadding(cm + dp(6), cm + dp(6), cm + dp(6), cm + dp(6))
-        videoClip.outlineProvider = object : ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: Outline) {
-                outline.setRoundRect(0, 0, view.width, view.height, dpf(18f))
-            }
+        // Burchaklar niqob bilan yumaloqlanadi (clip qilinmaydi — video silliq ishlaydi)
+        findViewById<CornerMaskView>(R.id.videoMask).setColor(pal.surface)
+        btnNav.background = neu(NeuDrawable.OVAL, 0, 3.5f, NeuDrawable.BUTTON)
+        btnNav.imageTintList = LauncherTheme.tint(pal.accent)
+        val pillDepth = dpf(5f)
+        val pm = NeuDrawable.margin(pillDepth).toInt()
+        for (b in arrayOf(btnRestore, btnRestoreNav)) {
+            b.background = NeuDrawable(pal, NeuDrawable.RECT, dpf(22f), pillDepth, NeuDrawable.BUTTON)
+            b.setPadding(pm + dp(14), 0, pm + dp(14), 0)
+            b.setTextColor(if (b == btnRestore) pal.accent else pal.text)
         }
-        videoClip.clipToOutline = true
 
         clockCard.background = neu(NeuDrawable.RECT, 26, cardDepth, NeuDrawable.RAISED)
         clockCard.setPadding(cm, cm, cm, cm)
@@ -574,6 +598,20 @@ class DashActivity : Activity() {
         infoColumn.visibility = if (on) View.GONE else View.VISIBLE
         tripPanel.visibility = if (on) View.VISIBLE else View.GONE
         if (on) updateTripStats()
+        updateRestoreBar()
+    }
+
+    /** Kattalashtirilgan yoki safar rejimida — "Panelni qaytarish" tugmasi ko'rinadi. */
+    private fun updateRestoreBar() {
+        if (!::restoreBar.isInitialized) return
+        restoreBar.visibility = if (expanded || tripMode) View.VISIBLE else View.GONE
+        btnRestoreNav.visibility = if (inMultiWindow) View.GONE else View.VISIBLE
+    }
+
+    /** Navigator yopilib qolgan bo'lsa — uni qayta yoniga ochadi. */
+    private fun bringNavigatorBack() {
+        prefs().edit().putBoolean("split_failed", false).apply()
+        launchNavigatorAdjacent(force = true)
     }
 
     private val statsTick = object : Runnable {
@@ -704,8 +742,11 @@ class DashActivity : Activity() {
             javaScriptEnabled = true
             domStorageEnabled = true
             mediaPlaybackRequiresUserGesture = false
-            loadWithOverviewMode = true
-            useWideViewPort = true
+            // Sahifani "kompyuter kengligida" chizib kichraytirmaymiz — bu kichik oynada qotishga sabab bo'lardi
+            loadWithOverviewMode = false
+            useWideViewPort = false
+            // YouTube WebView'ni tanib, cheklangan pleyer bermasligi uchun oddiy Chrome sifatida tanishtiramiz
+            userAgentString = userAgentString.replace("; wv)", ")").replace(Regex("Version/\\d+\\.\\d+ "), "")
         }
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -721,8 +762,9 @@ class DashActivity : Activity() {
                 }
                 customView = view
                 customCallback = callback
-                fullHolder.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                fullHolder.addView(view, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
                 fullHolder.visibility = View.VISIBLE
+                findViewById<View>(R.id.btnExitFull).bringToFront()
             }
 
             override fun onHideCustomView() = hideCustomView()
@@ -749,6 +791,7 @@ class DashActivity : Activity() {
     private fun setExpanded(on: Boolean) {
         expanded = on
         infoSwipe.visibility = if (on) View.GONE else View.VISIBLE
+        updateRestoreBar()
     }
 
     private fun hideCustomView() {
