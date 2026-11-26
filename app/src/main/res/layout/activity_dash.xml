@@ -233,7 +233,7 @@
                                     android:textSize="13sp" />
                             </LinearLayout>
 
-                            <!-- Batareya va ovoz: ikkita kichik "chuqurcha" -->
+                            <!-- Holat "chuqurchalari": Wi-Fi, Bluetooth, batareya, ovoz (bosiladi) -->
                             <LinearLayout
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
@@ -241,12 +241,41 @@
                                 android:orientation="horizontal">
 
                                 <TextView
+                                    android:id="@+id/wifiChip"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="30dp"
+                                    android:drawablePadding="5dp"
+                                    android:gravity="center"
+                                    android:maxLines="1"
+                                    android:text="Wi-Fi"
+                                    android:textSize="12sp" />
+
+                                <TextView
+                                    android:id="@+id/btChip"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="30dp"
+                                    android:layout_marginStart="6dp"
+                                    android:drawablePadding="5dp"
+                                    android:gravity="center"
+                                    android:maxLines="1"
+                                    android:text="BT"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="5dp"
+                                android:orientation="horizontal">
+
+                                <TextView
                                     android:id="@+id/batteryChip"
                                     android:layout_width="wrap_content"
                                     android:layout_height="30dp"
+                                    android:drawablePadding="5dp"
                                     android:gravity="center"
                                     android:maxLines="1"
-                                    android:text="🔋 —"
+                                    android:text="—"
                                     android:textSize="12sp" />
 
                                 <TextView
@@ -254,9 +283,10 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="30dp"
                                     android:layout_marginStart="6dp"
+                                    android:drawablePadding="5dp"
                                     android:gravity="center"
                                     android:maxLines="1"
-                                    android:text="🔊 —"
+                                    android:text="—"
                                     android:textSize="12sp" />
                             </LinearLayout>
                         </LinearLayout>
@@ -421,6 +451,46 @@
             android:text="Panelni qaytarish"
             android:textSize="15sp" />
     </LinearLayout>
+
+    <!-- Batareya / ovoz: katta ko'rsatkich (bosilsa yopiladi) -->
+    <FrameLayout
+        android:id="@+id/statOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/statBox"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center_horizontal"
+            android:orientation="vertical">
+
+            <uz.avtolauncher.BigStatView
+                android:id="@+id/bigStat"
+                android:layout_width="300dp"
+                android:layout_height="300dp" />
+
+            <TextView
+                android:id="@+id/statTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="0.15"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/statSub"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="14sp" />
+        </LinearLayout>
+    </FrameLayout>
 
     <!-- YouTube videosi to'liq oynada -->
     <FrameLayout

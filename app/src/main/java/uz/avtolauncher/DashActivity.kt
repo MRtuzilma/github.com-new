@@ -95,6 +95,24 @@ class DashActivity : Activity() {
             })()
         """
 
+        /**
+         * YouTube sahifasining yuqori panelidagi tugmalar (qidiruv va boshqalar) launcherning
+         * ⤢ tugmalari ostida qolmasligi uchun: biroz kichraytiriladi va chaproqqa (o'rtaga) suriladi.
+         */
+        private const val YT_CSS_JS = """
+            (function(){
+              if (document.getElementById('avto-css') || !document.head) return;
+              var st = document.createElement('style');
+              st.id = 'avto-css';
+              st.textContent =
+                'ytm-mobile-topbar-renderer header, header.mobile-topbar-header, ytm-mobile-topbar-renderer .mobile-topbar-header {' +
+                '  padding-right: 116px !important; box-sizing: border-box !important; }' +
+                'ytm-mobile-topbar-renderer button, ytm-mobile-topbar-renderer ytm-topbar-menu-button-renderer,' +
+                'header.mobile-topbar-header button { transform: scale(0.82); transform-origin: center; }';
+              document.head.appendChild(st);
+            })()
+        """
+
         private const val KEEP_VISIBLE_JS = """
             (function(){
               if (window.__avtoVis) return; window.__avtoVis = true;
@@ -202,6 +220,14 @@ class DashActivity : Activity() {
     private lateinit var compassText: TextView
     private lateinit var statusText: TextView
     private lateinit var batteryChip: TextView
+    private lateinit var wifiChip: TextView
+    private lateinit var btChip: TextView
+    private lateinit var statOverlay: View
+    private lateinit var bigStat: BigStatView
+    private lateinit var statTitle: TextView
+    private lateinit var statSub: TextView
+    private var statMode = ""
+    private var batteryTemp = -1f
     private lateinit var clockInner: View
     private lateinit var btnTheme: ImageButton
     private lateinit var dockCard: LinearLayout
@@ -274,6 +300,18 @@ class DashActivity : Activity() {
         compassText = findViewById(R.id.compassText)
         statusText = findViewById(R.id.statusText)
         batteryChip = findViewById(R.id.batteryChip)
+        wifiChip = findViewById(R.id.wifiChip)
+        btChip = findViewById(R.id.btChip)
+        statOverlay = findViewById(R.id.statOverlay)
+        bigStat = findViewById(R.id.bigStat)
+        statTitle = findViewById(R.id.statTitle)
+        statSub = findViewById(R.id.statSub)
+        // Holat tugmachalari
+        wifiChip.setOnClickListener { openSettings(android.provider.Settings.ACTION_WIFI_SETTINGS) }
+        btChip.setOnClickListener { openSettings(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS) }
+        batteryChip.setOnClickListener { showStat("bat") }
+        statusText.setOnClickListener { showStat("vol") }
+        setupStatOverlay()
         clockInner = findViewById(R.id.clockInner)
         // Soat kartasi tarkibi sig'masa — proporsional kichraytiramiz
         clockCard.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> clockCard.post { fitClock() } }
@@ -296,6 +334,7 @@ class DashActivity : Activity() {
         btnRestore = findViewById(R.id.btnRestore)
         btnRestoreNav = findViewById(R.id.btnRestoreNav)
         restoreBar = findViewById(R.id.restoreBar)
+        btnRestore.visibility = View.GONE // faqat "Navigator" tugmasi qoladi
 
         // Navigator yopilib qolsa — qaytarish
         btnNav.setOnClickListener { bringNavigatorBack() }
@@ -358,6 +397,18 @@ class DashActivity : Activity() {
         }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(timeTickReceiver, tf, Context.RECEIVER_NOT_EXPORTED)
         else registerReceiver(timeTickReceiver, tf)
+        val sf = IntentFilter().apply {
+            @Suppress("DEPRECATION")
+            addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION)
+            addAction(android.net.wifi.WifiManager.NETWORK_STATE_CHANGED_ACTION)
+            addAction(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            addAction("android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED")
+            addAction("android.media.VOLUME_CHANGED_ACTION")
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(stateReceiver, sf, Context.RECEIVER_EXPORTED)
+        else registerReceiver(stateReceiver, sf)
         updateDate()
         handler.post(statsTick)
     }
@@ -385,6 +436,10 @@ class DashActivity : Activity() {
         }
         try {
             unregisterReceiver(timeTickReceiver)
+        } catch (e: IllegalArgumentException) {
+        }
+        try {
+            unregisterReceiver(stateReceiver)
         } catch (e: IllegalArgumentException) {
         }
         handler.removeCallbacks(statsTick)
@@ -419,6 +474,7 @@ class DashActivity : Activity() {
     @Deprecated("Activity API")
     override fun onBackPressed() {
         when {
+            statOverlay.visibility == View.VISIBLE -> closeStat()
             customView != null -> hideCustomView()
             expanded || expandStage != 0 -> backToNormal()
             web.canGoBack() -> web.goBack()
@@ -562,7 +618,11 @@ class DashActivity : Activity() {
         weatherDesc.setTextColor(pal.textDim)
         compassText.setTextColor(pal.text)
         compassArrow.imageTintList = LauncherTheme.tint(pal.accent)
-        for (chip in arrayOf(batteryChip, statusText)) {
+        statOverlay.setBackgroundColor(LauncherTheme.withAlpha(pal.surface, 0xF6))
+        bigStat.setPalette(pal)
+        statTitle.setTextColor(pal.text)
+        statSub.setTextColor(pal.textDim)
+        for (chip in arrayOf(batteryChip, statusText, wifiChip, btChip)) {
             val d = dpf(2.5f)
             val m = NeuDrawable.margin(d).toInt()
             chip.background = NeuDrawable(pal, NeuDrawable.RECT, dpf(15f), d, NeuDrawable.INSET)
@@ -740,9 +800,171 @@ class DashActivity : Activity() {
     private fun updateStatus() {
         val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         val vol = audio.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / max
-        batteryChip.text = if (batteryPct >= 0) (if (batteryCharging) "⚡ $batteryPct%" else "🔋 $batteryPct%") else "🔋 —"
-        statusText.text = "🔊 $vol%"
+        // Batareya
+        batteryChip.text = if (batteryPct >= 0) "$batteryPct%" else "—"
+        chipIcon(batteryChip, if (batteryCharging) R.drawable.ic_battery_charging else R.drawable.ic_battery, batteryColor())
+        // Ovoz
+        statusText.text = "$vol%"
+        chipIcon(statusText, R.drawable.ic_volume, if (vol == 0) pal.textDim else pal.accent)
+        // Wi-Fi
+        val wifi = wifiConnected()
+        wifiChip.text = if (wifi) "Wi-Fi" else "Yo'q"
+        chipIcon(wifiChip, if (wifi) R.drawable.ic_wifi else R.drawable.ic_wifi_off, if (wifi) pal.accent else pal.textDim)
+        // Bluetooth
+        val bt = btState()
+        btChip.text = when (bt) { 2 -> "Ulangan"; 1 -> "Yoqiq"; else -> "O'chiq" }
+        chipIcon(btChip, if (bt == 2) R.drawable.ic_bt_connected else R.drawable.ic_bt, if (bt == 2) pal.accent else pal.textDim)
+        if (statMode.isNotEmpty()) updateStat()
     }
+
+    private fun chipIcon(tv: TextView, res: Int, color: Int) {
+        val d = getDrawable(res)?.mutate() ?: return
+        d.setTint(color)
+        val s = dp(16)
+        d.setBounds(0, 0, s, s)
+        tv.setCompoundDrawablesRelative(d, null, null, null)
+    }
+
+    private fun batteryColor(): Int = when {
+        batteryCharging -> 0xFF41E08A.toInt()
+        batteryPct in 0..19 -> 0xFFFF5468.toInt()
+        batteryPct in 20..49 -> 0xFFFFA62B.toInt()
+        else -> pal.accent
+    }
+
+    @Suppress("DEPRECATION")
+    private fun wifiConnected(): Boolean = try {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        if (Build.VERSION.SDK_INT >= 23) {
+            val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+            caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+        } else {
+            cm.activeNetworkInfo?.type == android.net.ConnectivityManager.TYPE_WIFI && cm.activeNetworkInfo?.isConnected == true
+        }
+    } catch (e: Exception) {
+        false
+    }
+
+    /** 0 — o'chiq, 1 — yoqiq (ulanmagan), 2 — qurilmaga ulangan. */
+    private fun btState(): Int = try {
+        @Suppress("DEPRECATION")
+        val a = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+        when {
+            a == null || !a.isEnabled -> 0
+            a.getProfileConnectionState(android.bluetooth.BluetoothProfile.A2DP) == android.bluetooth.BluetoothProfile.STATE_CONNECTED ||
+                    a.getProfileConnectionState(android.bluetooth.BluetoothProfile.HEADSET) == android.bluetooth.BluetoothProfile.STATE_CONNECTED -> 2
+            else -> 1
+        }
+    } catch (e: SecurityException) {
+        try {
+            @Suppress("DEPRECATION")
+            if (android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.isEnabled == true) 1 else 0
+        } catch (e2: Exception) {
+            0
+        }
+    } catch (e: Exception) {
+        0
+    }
+
+    private fun openSettings(action: String) {
+        try {
+            startActivity(Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) {
+            Toast.makeText(this, R.string.cannot_open, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Wi-Fi, Bluetooth va ovoz o'zgarganda tugmachalar yangilanadi. */
+    private val stateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            root.postDelayed({ updateStatus() }, 300)
+        }
+    }
+
+    // =================== Katta ko'rsatkich: batareya / ovoz ===================
+
+    private val hideStat = Runnable { closeStat() }
+
+    private fun setupStatOverlay() {
+        var downY = 0f
+        var lastY = 0f
+        var dragged = false
+        val step = dpf(26f)
+        statOverlay.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    downY = e.y; lastY = e.y; dragged = false
+                    handler.removeCallbacks(hideStat)
+                }
+                android.view.MotionEvent.ACTION_MOVE -> if (statMode == "vol") {
+                    if (!dragged && kotlin.math.abs(e.y - downY) > dpf(10f)) dragged = true
+                    if (dragged) {
+                        val n = ((lastY - e.y) / step).toInt()
+                        if (n != 0) {
+                            volumeListener.onVolumeStep(n)
+                            lastY -= n * step
+                        }
+                    }
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    if (!dragged) closeStat() else handler.postDelayed(hideStat, 4000)
+                }
+            }
+            true
+        }
+    }
+
+    /** Batareya yoki ovoz foizini butun panel bo'ylab katta ko'rsatadi. */
+    private fun showStat(mode: String) {
+        statMode = mode
+        val s = (minOf(root.width, root.height) * 0.62f).toInt().coerceAtLeast(dp(160))
+        bigStat.layoutParams = bigStat.layoutParams.apply { width = s; height = s }
+        updateStat()
+        statOverlay.animate().cancel()
+        statOverlay.alpha = 0f
+        statOverlay.visibility = View.VISIBLE
+        statOverlay.animate().alpha(1f).setDuration(200).start()
+        handler.removeCallbacks(hideStat)
+        handler.postDelayed(hideStat, 6000)
+    }
+
+    private fun updateStat() {
+        if (statMode == "bat") {
+            val pct = batteryPct.coerceAtLeast(0)
+            val emoji = when {
+                batteryCharging -> "⚡"
+                pct < 20 -> "⚠️"
+                else -> "🔋"
+            }
+            bigStat.set(pct, emoji, batteryColor())
+            statTitle.text = "BATAREYA"
+            val temp = if (batteryTemp > 0) "  ·  ${"%.1f".format(java.util.Locale.US, batteryTemp)} °C" else ""
+            statSub.text = (if (batteryCharging) "Zaryadlanmoqda" else "Zaryadlanmayapti") + temp
+        } else if (statMode == "vol") {
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            val cur = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val pct = cur * 100 / max
+            val emoji = when {
+                pct == 0 -> "🔇"
+                pct < 34 -> "🔈"
+                pct < 67 -> "🔉"
+                else -> "🔊"
+            }
+            bigStat.set(pct, emoji, if (pct == 0) pal.textDim else pal.accent)
+            statTitle.text = "OVOZ"
+            statSub.text = "Tepaga sursangiz — baland, pastga — past  ·  $cur / $max"
+        }
+    }
+
+    private fun closeStat() {
+        handler.removeCallbacks(hideStat)
+        if (statOverlay.visibility != View.VISIBLE) return
+        statOverlay.animate().alpha(0f).setDuration(200).withEndAction {
+            statOverlay.visibility = View.GONE
+            statMode = ""
+        }.start()
+    }
+
 
     // =================== Safar rejimi ===================
 
@@ -758,8 +980,8 @@ class DashActivity : Activity() {
     /** Kattalashtirilgan yoki safar rejimida — "Panelni qaytarish" tugmasi ko'rinadi. */
     private fun updateRestoreBar() {
         if (!::restoreBar.isInitialized) return
-        restoreBar.visibility = if (expanded || tripMode) View.VISIBLE else View.GONE
-        btnRestoreNav.visibility = if (inMultiWindow) View.GONE else View.VISIBLE
+        // Faqat Navigator yopilib qolganda va panel yashirin bo'lganda — "Navigator" tugmasi
+        restoreBar.visibility = if ((expanded || tripMode) && !inMultiWindow) View.VISIBLE else View.GONE
     }
 
     /** Navigator yopilib qolgan bo'lsa — uni qayta yoniga ochadi. */
@@ -890,6 +1112,9 @@ class DashActivity : Activity() {
             need.add(Manifest.permission.ACCESS_FINE_LOCATION)
             need.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
+        if (Build.VERSION.SDK_INT >= 31 &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+        ) need.add(Manifest.permission.BLUETOOTH_CONNECT) // Bluetooth ulanganini ko'rsatish uchun
         if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), REQ_LOCATION)
     }
 
@@ -1249,6 +1474,7 @@ class DashActivity : Activity() {
             override fun onPageFinished(view: WebView, url: String?) {
                 super.onPageFinished(view, url)
                 view.evaluateJavascript(KEEP_VISIBLE_JS, null)
+                view.evaluateJavascript(YT_CSS_JS, null)
             }
 
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
@@ -1281,6 +1507,7 @@ class DashActivity : Activity() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 super.onProgressChanged(view, newProgress)
                 if (newProgress in 10..100) view.evaluateJavascript(KEEP_VISIBLE_JS, null)
+                if (newProgress >= 50) view.evaluateJavascript(YT_CSS_JS, null)
             }
         }
         if (Build.VERSION.SDK_INT >= 26) {
@@ -1386,6 +1613,7 @@ class DashActivity : Activity() {
         if (requestCode == REQ_LOCATION) {
             startGps()
             refreshWeatherIfNeeded()
+            updateStatus()
         }
     }
 
@@ -1523,6 +1751,8 @@ class DashActivity : Activity() {
             batteryPct = level * 100 / scale
             batteryCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
                     status == BatteryManager.BATTERY_STATUS_FULL
+            val t = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1)
+            batteryTemp = if (t > 0) t / 10f else -1f
             updateStatus()
         }
     }
