@@ -619,7 +619,7 @@ class DashActivity : Activity() {
                     setPadding(m + dp(4), m, m + dp(4), m)
                 }
                 val value = TextView(this).apply {
-                    textSize = 26f
+                    textSize = 30f
                     setTextColor(if (key == "trip") pal.accent else pal.text)
                     typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
                     maxLines = 1
@@ -650,21 +650,28 @@ class DashActivity : Activity() {
         updateTripStats()
     }
 
-    private fun fmtKm(km: Double): String = when {
-        km < 10 -> String.format(java.util.Locale.US, "%.1f km", km)
-        else -> String.format(java.util.Locale("ru"), "%,d km", km.toLong())
+    /** Katta raqam + kichik birlik (masalan "46" va "km/soat"), katakchaga sig'ishi uchun. */
+    private fun valueText(number: String, unit: String): CharSequence {
+        if (unit.isEmpty()) return number
+        val sp = android.text.SpannableString("$number $unit")
+        sp.setSpan(android.text.style.RelativeSizeSpan(0.45f), number.length, sp.length, 0)
+        return sp
     }
+
+    private fun kmNumber(km: Double): String =
+        if (km < 100) String.format(java.util.Locale.US, "%.1f", km)
+        else String.format(java.util.Locale("ru"), "%,d", km.toLong())
 
     private fun updateTripStats() {
         if (statViews.isEmpty()) return
         val st = Trip.stats(this)
         val mins = st.movingMs / 60_000
-        statViews["trip"]?.text = fmtKm(st.tripKm)
-        statViews["avg"]?.text = "${st.avgKmh.toInt()} km/soat"
-        statViews["max"]?.text = "${st.maxKmh.toInt()} km/soat"
-        statViews["time"]?.text = String.format(java.util.Locale.US, "%d:%02d", mins / 60, mins % 60)
-        statViews["today"]?.text = fmtKm(st.todayKm)
-        statViews["total"]?.text = fmtKm(st.totalKm)
+        statViews["trip"]?.text = valueText(kmNumber(st.tripKm), "km")
+        statViews["avg"]?.text = valueText(st.avgKmh.toInt().toString(), "km/soat")
+        statViews["max"]?.text = valueText(st.maxKmh.toInt().toString(), "km/soat")
+        statViews["time"]?.text = valueText(String.format(java.util.Locale.US, "%d:%02d", mins / 60, mins % 60), "soat")
+        statViews["today"]?.text = valueText(kmNumber(st.todayKm), "km")
+        statViews["total"]?.text = valueText(kmNumber(st.totalKm), "km")
     }
 
     // =================== BT: ekran yoniq turishi ===================
