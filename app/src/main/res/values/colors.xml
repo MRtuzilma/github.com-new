@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#FF07090D</color>
+    <color name="panel">#FF121821</color>
+    <color name="panel_stroke">#FF1E2733</color>
+    <color name="tile">#FF161E29</color>
+    <color name="tile_pressed">#FF223044</color>
+    <color name="accent">#FF2FD5C8</color>
+    <color name="text">#FFF2F5F8</color>
+    <color name="text_dim">#FF8A97A8</color>
+</resources>

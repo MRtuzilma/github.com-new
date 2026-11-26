@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Avto Launcher</string>
+    <string name="kmh">km/soat</string>
+    <string name="no_music">Musiqa chalinmayapti</string>
+    <string name="media_permission">Qo\'shiq nomini ko\'rsatish uchun shu yerga bosib ruxsat bering</string>
+    <string name="gps_wait">GPS signal kutilmoqda…</string>
+    <string name="gps_off">Joylashuvga ruxsat berilmagan</string>
+    <string name="all_apps">Barcha ilovalar</string>
+    <string name="settings">Sozlamalar</string>
+    <string name="pick_app">Ilova tanlang</string>
+    <string name="empty_slot">Bo\'sh</string>
+    <string name="add_app">Ilova qo\'shish</string>
+    <string name="hint_long_press">Tugmani almashtirish uchun uni bosib turing</string>
+    <string name="cannot_open">Ilovani ochib bo\'lmadi</string>
+</resources>
