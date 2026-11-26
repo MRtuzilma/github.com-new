@@ -235,6 +235,7 @@ abstract class BaseDashActivity : Activity() {
             b.background = LauncherTheme.roundBtn(pal)
             b.imageTintList = LauncherTheme.tint(pal.text)
         }
+        onThemeApplied()
         albumArt.imageTintList = if (controller?.metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) == null)
             LauncherTheme.tint(pal.text) else null
     }
@@ -348,6 +349,8 @@ abstract class BaseDashActivity : Activity() {
 
     /** Har bir ekran o'z tugmalarini quradi. */
     protected abstract fun layoutRes(): Int
+    /** Tema o'zgarganda qo'shimcha qismlarni bo'yash uchun. */
+    protected open fun onThemeApplied() {}
     protected abstract fun buildTiles()
     protected abstract fun saveSlot(slot: Int, key: String)
 

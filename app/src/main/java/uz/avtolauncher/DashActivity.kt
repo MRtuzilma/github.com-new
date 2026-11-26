@@ -4,7 +4,16 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.content.Context
 import android.view.View
+import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.Toast
 
@@ -18,7 +27,17 @@ class DashActivity : BaseDashActivity() {
     companion object {
         const val EXTRA_START_NAV = "start_nav"
         private const val MINI_BASE = 100
+        private const val YT_HOME = "https://m.youtube.com"
     }
+
+    private lateinit var web: WebView
+    private lateinit var videoPanel: View
+    private lateinit var dashBottom: View
+    private lateinit var fullHolder: FrameLayout
+    private lateinit var btnVideoShow: ImageButton
+    private var customView: View? = null
+    private var customCallback: WebChromeClient.CustomViewCallback? = null
+    private var expanded = false
 
     private var waitingForSplit = false
     private var helpShown = false
@@ -27,6 +46,7 @@ class DashActivity : BaseDashActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setupVideo(savedInstanceState)
         if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_START_NAV, false)) {
             findViewById<View>(R.id.root).postDelayed({ launchNavigator() }, 300)
         }
@@ -102,6 +122,127 @@ class DashActivity : BaseDashActivity() {
             }
             .setNegativeButton("Yopish", null)
             .show()
+    }
+
+    // ---------------- YouTube oynasi ----------------
+    // Yo'lovchilar uchun: mashina harakatlanganda ham video to'xtamaydi.
+
+    private fun videoPrefs() = getSharedPreferences("video", Context.MODE_PRIVATE)
+
+    private fun setupVideo(state: Bundle?) {
+        web = findViewById(R.id.web)
+        videoPanel = findViewById(R.id.videoPanel)
+        dashBottom = findViewById(R.id.dashBottom)
+        fullHolder = findViewById(R.id.fullHolder)
+        btnVideoShow = findViewById(R.id.btnVideoShow)
+        videoPanel.clipToOutline = true
+
+        CookieManager.getInstance().setAcceptCookie(true)
+        web.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            mediaPlaybackRequiresUserGesture = false
+            loadWithOverviewMode = true
+            useWideViewPort = true
+        }
+        web.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                // "Ilovada ochish" kabi havolalar oynadan chiqib ketmasin
+                val scheme = request.url.scheme ?: return true
+                return scheme != "http" && scheme != "https"
+            }
+        }
+        web.webChromeClient = object : WebChromeClient() {
+            override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+                if (customView != null) {
+                    callback.onCustomViewHidden()
+                    return
+                }
+                customView = view
+                customCallback = callback
+                fullHolder.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                fullHolder.visibility = View.VISIBLE
+            }
+
+            override fun onHideCustomView() = hideCustomView()
+        }
+        if (state != null) web.restoreState(state)
+        if (web.url == null) web.loadUrl(videoPrefs().getString("url", YT_HOME) ?: YT_HOME)
+
+        findViewById<ImageButton>(R.id.btnVideoBack).setOnClickListener { if (web.canGoBack()) web.goBack() }
+        findViewById<ImageButton>(R.id.btnVideoHome).setOnClickListener { web.loadUrl(YT_HOME) }
+        findViewById<ImageButton>(R.id.btnVideoExpand).setOnClickListener { setExpanded(!expanded) }
+        findViewById<ImageButton>(R.id.btnVideoClose).setOnClickListener { setVideoVisible(false) }
+        btnVideoShow.setOnClickListener { setVideoVisible(true) }
+        setVideoVisible(videoPrefs().getBoolean("visible", true))
+    }
+
+    private fun setVideoVisible(visible: Boolean) {
+        videoPrefs().edit().putBoolean("visible", visible).apply()
+        if (!visible) {
+            setExpanded(false)
+            web.onPause()
+        } else {
+            web.onResume()
+        }
+        videoPanel.visibility = if (visible) View.VISIBLE else View.GONE
+        btnVideoShow.visibility = if (visible) View.GONE else View.VISIBLE
+    }
+
+    /** Kattalashtirilganda YouTube butun panelni egallaydi (alohida ekrandek). */
+    private fun setExpanded(on: Boolean) {
+        expanded = on
+        dashBottom.visibility = if (on) View.GONE else View.VISIBLE
+        (videoPanel.layoutParams as LinearLayout.LayoutParams).bottomMargin = if (on) 0 else dp(10)
+        videoPanel.requestLayout()
+    }
+
+    private fun hideCustomView() {
+        val v = customView ?: return
+        fullHolder.removeView(v)
+        fullHolder.visibility = View.GONE
+        customView = null
+        customCallback?.onCustomViewHidden()
+        customCallback = null
+    }
+
+    override fun onThemeApplied() {
+        findViewById<View>(R.id.videoPanel).background = LauncherTheme.panelBg(pal, dp(22).toFloat(), hasWallpaper)
+        (findViewById<View>(R.id.btnVideoShow) as? ImageButton)?.imageTintList = LauncherTheme.tint(pal.accent)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        web.saveState(outState)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (videoPanel.visibility == View.VISIBLE) web.onResume()
+    }
+
+    override fun onStop() {
+        // Panel ko'rinmay qolganda (masalan, boshqa ilova butun ekranga ochilsa) video to'xtaydi.
+        // Navigator yonida turganda esa to'xtamaydi — hatto Navigator bosilgan bo'lsa ham.
+        web.url?.let { videoPrefs().edit().putString("url", it).apply() }
+        web.onPause()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        hideCustomView()
+        web.destroy()
+        super.onDestroy()
+    }
+
+    @Deprecated("Activity API")
+    override fun onBackPressed() {
+        when {
+            customView != null -> hideCustomView()
+            expanded -> setExpanded(false)
+            videoPanel.visibility == View.VISIBLE && web.canGoBack() -> web.goBack()
+            else -> super.onBackPressed()
+        }
     }
 
     override fun buildTiles() {
