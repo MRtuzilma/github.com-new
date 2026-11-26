@@ -109,16 +109,41 @@ class DashActivity : Activity() {
               ['visibilitychange','webkitvisibilitychange'].forEach(function(t){ document.addEventListener(t, stop, true); });
               ['blur','pagehide','freeze'].forEach(function(t){ window.addEventListener(t, stop, true); });
 
-              // YouTube'ning "to'liq ekran" tugmasi: haqiqiy fullscreen o'rniga launcherning ⤢ bosqichlari ishlaydi
-              var fs = function(){ try { AvtoBridge.toggle(); } catch(e) {} return Promise.resolve(); };
+              // YouTube'ning "to'liq ekran" tugmasi: haqiqiy fullscreen o'rniga launcher oynasi kattalashadi.
+              // YouTube pleyeri to'liq ekranda ekanini "o'ylashi" launcher holati bilan doim bir xil bo'ladi.
+              window.__avtoFs = null;
+              var defs = function(name, getter){ try { Object.defineProperty(document, name, {get: getter, configurable: true}); } catch(e) {} };
+              defs('fullscreenElement', function(){ return window.__avtoFs; });
+              defs('webkitFullscreenElement', function(){ return window.__avtoFs; });
+              defs('webkitCurrentFullScreenElement', function(){ return window.__avtoFs; });
+              defs('fullscreen', function(){ return !!window.__avtoFs; });
+              defs('webkitIsFullScreen', function(){ return !!window.__avtoFs; });
+              defs('fullscreenEnabled', function(){ return true; });
+              defs('webkitFullscreenEnabled', function(){ return true; });
+              window.__avtoSetFs = function(on){
+                var prev = window.__avtoFs;
+                var el = on ? (window.__avtoFsEl || prev || document.documentElement) : null;
+                if (!!el === !!prev) return;
+                window.__avtoFs = el;
+                var target = el || prev || document;
+                ['fullscreenchange','webkitfullscreenchange'].forEach(function(t){
+                  try { target.dispatchEvent(new Event(t, {bubbles: true})); } catch(e) {}
+                });
+              };
+              var enterFs = function(){
+                if (this && this.nodeType === 1) window.__avtoFsEl = this;
+                try { AvtoBridge.enter(); } catch(e) {}
+                return Promise.resolve();
+              };
+              var exitFs = function(){ try { AvtoBridge.exit(); } catch(e) {} return Promise.resolve(); };
               try {
-                Element.prototype.requestFullscreen = fs;
-                Element.prototype.webkitRequestFullscreen = fs;
-                Element.prototype.webkitRequestFullScreen = fs;
-                HTMLVideoElement.prototype.webkitEnterFullscreen = fs;
-                document.exitFullscreen = fs;
-                document.webkitExitFullscreen = fs;
-                document.webkitCancelFullScreen = fs;
+                Element.prototype.requestFullscreen = enterFs;
+                Element.prototype.webkitRequestFullscreen = enterFs;
+                Element.prototype.webkitRequestFullScreen = enterFs;
+                HTMLVideoElement.prototype.webkitEnterFullscreen = enterFs;
+                document.exitFullscreen = exitFs;
+                document.webkitExitFullscreen = exitFs;
+                document.webkitCancelFullScreen = exitFs;
                 if (screen.orientation && screen.orientation.lock) screen.orientation.lock = function(){ return Promise.resolve(); };
               } catch(e) {}
 
@@ -277,8 +302,7 @@ class DashActivity : Activity() {
         btnRestoreNav.setOnClickListener { bringNavigatorBack() }
         // Oddiy ko'rinishga qaytish
         btnRestore.setOnClickListener {
-            setExpanded(false)
-            expandStage = 0
+            backToNormal()
             setTripMode(false)
         }
         findViewById<View>(R.id.btnExitFull).setOnClickListener { hideCustomView() }
@@ -326,6 +350,15 @@ class DashActivity : Activity() {
         else registerReceiver(batteryReceiver, filter)
         handler.post(themeCheck)
         web.onResume()
+        val tf = IntentFilter().apply {
+            addAction(Intent.ACTION_TIME_TICK)
+            addAction(Intent.ACTION_DATE_CHANGED)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(timeTickReceiver, tf, Context.RECEIVER_NOT_EXPORTED)
+        else registerReceiver(timeTickReceiver, tf)
+        updateDate()
         handler.post(statsTick)
     }
 
@@ -348,6 +381,10 @@ class DashActivity : Activity() {
         handler.removeCallbacks(themeCheck)
         try {
             unregisterReceiver(batteryReceiver)
+        } catch (e: IllegalArgumentException) {
+        }
+        try {
+            unregisterReceiver(timeTickReceiver)
         } catch (e: IllegalArgumentException) {
         }
         handler.removeCallbacks(statsTick)
@@ -383,10 +420,7 @@ class DashActivity : Activity() {
     override fun onBackPressed() {
         when {
             customView != null -> hideCustomView()
-            expanded -> {
-                setExpanded(false)
-                expandStage = 0
-            }
+            expanded || expandStage != 0 -> backToNormal()
             web.canGoBack() -> web.goBack()
             else -> { /* bosh ekran — yopilmaydi */ }
         }
@@ -521,7 +555,8 @@ class DashActivity : Activity() {
 
         // Matnlar
         findViewById<TextClock>(R.id.timeClock).setTextColor(pal.text)
-        findViewById<TextClock>(R.id.dateClock).setTextColor(pal.accent)
+        findViewById<TextView>(R.id.dateClock).setTextColor(pal.accent)
+        updateDate()
         weatherTemp.setTextColor(pal.text)
         weatherIcon.setTextColor(pal.text)
         weatherDesc.setTextColor(pal.textDim)
@@ -705,7 +740,6 @@ class DashActivity : Activity() {
     private fun updateStatus() {
         val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         val vol = audio.getStreamVolume(AudioManager.STREAM_MUSIC) * 100 / max
-        val bat = if (batteryPct >= 0) (if (batteryCharging) "⚡ $batteryPct%" else "🔋 $batteryPct%") + "   " else ""
         batteryChip.text = if (batteryPct >= 0) (if (batteryCharging) "⚡ $batteryPct%" else "🔋 $batteryPct%") else "🔋 —"
         statusText.text = "🔊 $vol%"
     }
@@ -767,11 +801,15 @@ class DashActivity : Activity() {
                     setPadding(m + dp(4), m, m + dp(4), m)
                 }
                 val value = TextView(this).apply {
-                    textSize = 30f
+                    textSize = if (Build.VERSION.SDK_INT >= 26) 30f else 22f
                     setTextColor(if (key == "trip") pal.accent else pal.text)
                     typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
                     maxLines = 1
                     gravity = android.view.Gravity.CENTER
+                    // Katakchaga sig'masa — shrift o'zi kichrayadi
+                    if (Build.VERSION.SDK_INT >= 26) {
+                        setAutoSizeTextTypeUniformWithConfiguration(11, 30, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+                    }
                 }
                 val cap = TextView(this).apply {
                     text = label
@@ -780,7 +818,7 @@ class DashActivity : Activity() {
                     maxLines = 1
                     gravity = android.view.Gravity.CENTER
                 }
-                tile.addView(value)
+                tile.addView(value, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
                 tile.addView(cap)
                 if (key == "trip") {
                     tile.setOnLongClickListener {
@@ -970,6 +1008,7 @@ class DashActivity : Activity() {
             addOverlayCloseButton(root) { exitOverlay() }
             overlayHoldsWeb = true
             expandStage = 2
+            syncYtFs(true)
             if (playing) keepPlaying()
         }
     }
@@ -980,6 +1019,7 @@ class DashActivity : Activity() {
         if (root == null) {
             setExpanded(false)
             expandStage = 0
+            syncYtFs(false)
             return
         }
         if (customView != null) {
@@ -995,6 +1035,7 @@ class DashActivity : Activity() {
             removeOverlayWindow()
             setExpanded(false)
             expandStage = 0
+            syncYtFs(false)
             if (playing) keepPlaying()
         }
     }
@@ -1008,13 +1049,31 @@ class DashActivity : Activity() {
             0 -> {
                 setExpanded(true)
                 expandStage = 1
+                syncYtFs(false)
             }
             1 -> if (canOverlay()) enterOverlay() else {
                 setExpanded(false)
                 expandStage = 0
+                syncYtFs(false)
                 askOverlayPermission()
             }
             else -> exitOverlay()
+        }
+    }
+
+    /** YouTube pleyeriga launcher holatini bildiradi (to'liq ekranda emasmi yoki ekanmi). */
+    private fun syncYtFs(on: Boolean) {
+        web.evaluateJavascript("window.__avtoSetFs && window.__avtoSetFs($on);", null)
+    }
+
+    /** Har qanday kattalashtirilgan holatdan — oddiy ko'rinishga (panel bilan). */
+    private fun backToNormal() {
+        if (overlayRoot != null || expandStage == 2) {
+            exitOverlay()
+        } else {
+            setExpanded(false)
+            expandStage = 0
+            syncYtFs(false)
         }
     }
 
@@ -1076,6 +1135,28 @@ class DashActivity : Activity() {
         @android.webkit.JavascriptInterface
         fun toggle() {
             runOnUiThread { cycleExpand() }
+        }
+
+        /** YouTube'ning o'z "to'liq ekran" tugmasi — darhol butun ekranga. */
+        @android.webkit.JavascriptInterface
+        fun enter() {
+            runOnUiThread {
+                when {
+                    expandStage == 2 -> syncYtFs(true)
+                    canOverlay() -> enterOverlay()
+                    else -> {
+                        setExpanded(true)
+                        expandStage = 1
+                        syncYtFs(true)
+                    }
+                }
+            }
+        }
+
+        /** YouTube'ning "to'liq ekrandan chiqish" tugmasi — oddiy holatga. */
+        @android.webkit.JavascriptInterface
+        fun exit() {
+            runOnUiThread { backToNormal() }
         }
 
         @android.webkit.JavascriptInterface
@@ -1374,6 +1455,25 @@ class DashActivity : Activity() {
             locationManager?.removeUpdates(locationListener)
         } catch (e: Exception) {
         }
+    }
+
+    // =================== Sana (o'zbekcha) ===================
+
+    private val uzDays = arrayOf("yakshanba", "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba")
+    private val uzMonths = arrayOf(
+        "yanvar", "fevral", "mart", "aprel", "may", "iyun",
+        "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"
+    )
+
+    /** Planshet tili qanday bo'lishidan qat'i nazar, sana o'zbekcha ko'rsatiladi. */
+    private fun updateDate() {
+        val c = java.util.Calendar.getInstance()
+        val text = "${uzDays[c.get(java.util.Calendar.DAY_OF_WEEK) - 1]}, ${c.get(java.util.Calendar.DAY_OF_MONTH)} ${uzMonths[c.get(java.util.Calendar.MONTH)]}"
+        findViewById<TextView>(R.id.dateClock).text = text
+    }
+
+    private val timeTickReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) = updateDate()
     }
 
     // =================== Ob-havo ===================

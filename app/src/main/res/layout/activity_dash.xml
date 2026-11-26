@@ -161,13 +161,11 @@
                                 android:includeFontPadding="false"
                                 android:textSize="54sp" />
 
-                            <TextClock
+                            <TextView
                                 android:id="@+id/dateClock"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:fontFamily="sans-serif-medium"
-                                android:format12Hour="EEEE, d MMMM"
-                                android:format24Hour="EEEE, d MMMM"
                                 android:letterSpacing="0.04"
                                 android:maxLines="1"
                                 android:textSize="13sp" />
