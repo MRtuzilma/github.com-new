@@ -117,7 +117,7 @@ class DashActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_dash)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Ekran yoniq turishini BT Ekran boshqaradi (Bluetooth ulanganda yoniq, uzilganda bloklanadi)
         audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
         root = findViewById(R.id.root)
@@ -664,8 +664,13 @@ class DashActivity : Activity() {
         statViews["total"]?.text = valueText(kmNumber(st.totalKm), "km")
     }
 
+    /** "BT" tugmasi: launcher ichidagi BT Ekran (v4.3) ilovasini ochadi. */
     private fun btSoon() {
-        Toast.makeText(this, "BT funksiyasi keyingi versiyada qo'shiladi", Toast.LENGTH_SHORT).show()
+        try {
+            startActivity(Intent().setClassName(packageName, "uz.ekranbt.MainActivity"))
+        } catch (e: Exception) {
+            Toast.makeText(this, R.string.cannot_open, Toast.LENGTH_SHORT).show()
+        }
     }
 
     // =================== Birinchi sozlash ===================
