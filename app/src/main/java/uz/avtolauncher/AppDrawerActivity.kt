@@ -37,9 +37,9 @@ class AppDrawerActivity : Activity() {
         setContentView(R.layout.activity_drawer)
         grid = findViewById(R.id.grid)
         pal = LauncherTheme.palette(this)
-        findViewById<View>(R.id.drawerRoot).setBackgroundColor(pal.bg)
-        window.statusBarColor = pal.bg
-        window.navigationBarColor = pal.bg
+        findViewById<View>(R.id.drawerRoot).setBackgroundColor(pal.surface)
+        window.statusBarColor = pal.surface
+        window.navigationBarColor = pal.surface
         findViewById<TextView>(R.id.drawerTitle).setTextColor(pal.text)
 
         val slot = intent.getIntExtra(EXTRA_SLOT, -1)
@@ -61,10 +61,8 @@ class AppDrawerActivity : Activity() {
             val apps = loadApps()
             val list = if (pickMode) {
                 listOf(
-                    Entry(getString(R.string.empty_slot), "", getDrawable(R.drawable.ic_add)),
                     Entry(getString(R.string.all_apps), Slots.APPS, getDrawable(R.drawable.ic_apps)),
-                    Entry(getString(R.string.settings), Slots.SETTINGS, getDrawable(R.drawable.ic_settings)),
-                    Entry(getString(R.string.split_nav), Slots.SPLIT, getDrawable(R.drawable.ic_split))
+                    Entry(getString(R.string.settings), Slots.SETTINGS, getDrawable(R.drawable.ic_settings))
                 ) + apps
             } else apps
             runOnUiThread {
@@ -108,9 +106,9 @@ class AppDrawerActivity : Activity() {
             val holder = convertView as? LinearLayout ?: LinearLayout(this@AppDrawerActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                background = LauncherTheme.tileBg(pal, dp(20).toFloat(), false)
-                setPadding(dp(8), dp(14), dp(8), dp(12))
-                layoutParams = AbsListView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(130))
+                background = NeuDrawable(pal, NeuDrawable.RECT, dp(22).toFloat(), dp(5).toFloat(), NeuDrawable.BUTTON)
+                setPadding(dp(14), dp(16), dp(14), dp(14))
+                layoutParams = AbsListView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(140))
                 addView(ImageView(context), LinearLayout.LayoutParams(dp(56), dp(56)))
                 addView(TextView(context).apply {
                     setTextColor(pal.text)

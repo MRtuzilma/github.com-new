@@ -67,6 +67,15 @@ object Weather {
         }
     }
 
+    /** Belgi, harorat va nom alohida (dizayn uchun). */
+    fun parts(n: Now): Triple<String, String, String> {
+        val full = describe(n)
+        val icon = full.substringBefore(" ")
+        val sign = if (n.tempC > 0) "+" else ""
+        val name = full.substringAfter("°").trim()
+        return Triple(icon, "$sign${n.tempC}°", name)
+    }
+
     /** WMO ob-havo kodi → belgi va nomi. */
     fun describe(n: Now): String {
         val (icon, name) = when (n.code) {

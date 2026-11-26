@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#FF07090D</color>
+    <color name="bg">#FF23272F</color>
     <color name="panel">#FF121821</color>
     <color name="panel_stroke">#FF1E2733</color>
     <color name="tile">#FF161E29</color>

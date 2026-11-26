@@ -2,6 +2,8 @@ package uz.avtolauncher
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -15,64 +17,56 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-/** Dumaloq spidometr: 0–200 km/soat, 240° yoy. */
+/**
+ * Katta neumorfik spidometr:
+ * bo'rtgan tashqi halqa → ichkariga botgan chuqurcha (shkala va yonib turgan yoy) → bo'rtgan markaz (tezlik raqami).
+ */
 class SpeedGaugeView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : View(context, attrs) {
 
     private val maxSpeed = 200f
-    private val startAngle = 150f
-    private val sweepAngle = 240f
+    private val startAngle = 135f
+    private val sweepAngle = 270f
 
     private var shown = 0f
     private var animator: ValueAnimator? = null
-
-    @Suppress("DEPRECATION")
-    private var accent = context.resources.getColor(R.color.accent)
-    @Suppress("DEPRECATION")
-    private var dim = context.resources.getColor(R.color.text_dim)
+    private var pal: LauncherTheme.Palette = LauncherTheme.palette(context)
+    private var staticLayer: Bitmap? = null
 
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
-        color = Color.parseColor("#1E2733")
     }
     private val progressPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
-        color = accent
     }
-    private val tickPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
-        color = dim
     }
-    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = dim
-        textAlign = Paint.Align.CENTER
-    }
-    private val bigPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
+    private val numberPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
         typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
     }
     private val unitPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = dim
         textAlign = Paint.Align.CENTER
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        letterSpacing = 0.12f
     }
     private val oval = RectF()
-    private val unitText = context.getString(R.string.kmh)
+    private val unitText = context.getString(R.string.kmh).uppercase()
 
-    /** Tema o'zgarganda ranglarni yangilash. */
-    fun setColors(accent: Int, track: Int, text: Int, dim: Int) {
-        this.accent = accent
-        this.dim = dim
-        trackPaint.color = track
-        tickPaint.color = dim
-        labelPaint.color = dim
-        unitPaint.color = dim
-        bigPaint.color = text
+    init {
+        // Yoyning yorug'lik (glow) effekti uchun
+        setLayerType(LAYER_TYPE_SOFTWARE, null)
+    }
+
+    fun setPalette(p: LauncherTheme.Palette) {
+        pal = p
+        staticLayer = null
         invalidate()
     }
 
@@ -91,56 +85,115 @@ class SpeedGaugeView @JvmOverloads constructor(
     }
 
     private fun colorFor(speed: Float): Int = when {
-        speed > 120f -> Color.parseColor("#FF5A5F")
-        speed > 90f -> Color.parseColor("#FFB020")
-        else -> accent
+        speed > 120f -> Color.parseColor("#FF5468")
+        speed > 90f -> Color.parseColor("#FFA62B")
+        else -> pal.accent
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        staticLayer = null
+    }
+
+    // Geometriya
+    private val size get() = min(width, height).toFloat()
+    private val depth get() = size * 0.035f
+    private val outerR get() = size / 2f - NeuDrawable.margin(depth)
+    private val wellR get() = outerR * 0.86f
+    private val discR get() = outerR * 0.50f
+    private val arcR get() = (wellR + discR) / 2f + outerR * 0.02f
+    private val arcW get() = (wellR - discR) * 0.30f
+
+    private fun buildStatic(): Bitmap {
+        val w = width
+        val h = height
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val cx = w / 2f
+        val cy = h / 2f
+        val m = NeuDrawable.margin(depth)
+
+        fun circle(r: Float, mode: Int, d: Float) {
+            val dm = NeuDrawable.margin(d)
+            val nd = NeuDrawable(pal, NeuDrawable.OVAL, 0f, d, mode)
+            nd.setBounds((cx - r - dm).toInt(), (cy - r - dm).toInt(), (cx + r + dm).toInt(), (cy + r + dm).toInt())
+            nd.draw(c)
+        }
+        circle(outerR, NeuDrawable.RAISED, depth)
+        circle(wellR, NeuDrawable.INSET, depth * 0.8f)
+
+        // Shkala: har 10 km/soatda chiziq, har 20 da raqam
+        val tick = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            color = pal.textDim
+        }
+        val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = pal.textDim
+            textAlign = Paint.Align.CENTER
+            textSize = size * 0.045f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+        val steps = 20
+        for (i in 0..steps) {
+            val a = Math.toRadians((startAngle + sweepAngle * i / steps).toDouble())
+            val major = i % 2 == 0
+            val outer = wellR - size * 0.018f
+            val inner = outer - if (major) size * 0.035f else size * 0.018f
+            tick.strokeWidth = if (major) size * 0.007f else size * 0.004f
+            tick.alpha = if (major) 220 else 120
+            val co = cos(a).toFloat()
+            val si = sin(a).toFloat()
+            c.drawLine(cx + co * inner, cy + si * inner, cx + co * outer, cy + si * outer, tick)
+        }
+        for (i in 0..10) {
+            val a = Math.toRadians((startAngle + sweepAngle * i / 10).toDouble())
+            val lr = outerR + m * 0.0f - (outerR - wellR) / 2f
+            c.drawText(
+                (i * 20).toString(),
+                cx + cos(a).toFloat() * lr,
+                cy + sin(a).toFloat() * lr + label.textSize * 0.36f,
+                label
+            )
+        }
+
+        // Yoy izi (botgan yo'lak)
+        trackPaint.strokeWidth = arcW
+        trackPaint.color = LauncherTheme.mix(pal.well, pal.shadowDark, 0.45f)
+        oval.set(cx - arcR, cy - arcR, cx + arcR, cy + arcR)
+        c.drawArc(oval, startAngle, sweepAngle, false, trackPaint)
+
+        circle(discR, NeuDrawable.RAISED, depth * 0.9f)
+        return bmp
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val size = min(width, height).toFloat()
-        if (size <= 0f) return
-        val stroke = size * 0.055f
+        if (width <= 0 || height <= 0 || outerR <= 0f) return
+        val layer = staticLayer ?: buildStatic().also { staticLayer = it }
+        canvas.drawBitmap(layer, 0f, 0f, null)
+
         val cx = width / 2f
-        val cy = height / 2f + size * 0.04f
-        val r = size / 2f - stroke
-
-        trackPaint.strokeWidth = stroke
-        progressPaint.strokeWidth = stroke
-        progressPaint.color = colorFor(shown)
-        oval.set(cx - r, cy - r, cx + r, cy + r)
-
-        canvas.drawArc(oval, startAngle, sweepAngle, false, trackPaint)
+        val cy = height / 2f
+        val color = colorFor(shown)
+        oval.set(cx - arcR, cy - arcR, cx + arcR, cy + arcR)
         val sweep = sweepAngle * (shown / maxSpeed)
-        if (sweep > 0.5f) canvas.drawArc(oval, startAngle, sweep, false, progressPaint)
-
-        // Shkala chiziqlari va raqamlari (har 20 km/soat)
-        tickPaint.strokeWidth = size * 0.008f
-        labelPaint.textSize = size * 0.05f
-        val steps = 10
-        for (i in 0..steps) {
-            val angle = Math.toRadians((startAngle + sweepAngle * i / steps).toDouble())
-            val outer = r - stroke * 0.9f
-            val inner = r - stroke * (if (i % 2 == 0) 1.7f else 1.3f)
-            val c = cos(angle).toFloat()
-            val s = sin(angle).toFloat()
-            canvas.drawLine(cx + c * inner, cy + s * inner, cx + c * outer, cy + s * outer, tickPaint)
-            if (i % 2 == 0) {
-                val lr = r - stroke * 2.7f
-                val value = (maxSpeed * i / steps).roundToInt()
-                canvas.drawText(
-                    value.toString(),
-                    cx + c * lr,
-                    cy + s * lr + labelPaint.textSize * 0.35f,
-                    labelPaint
-                )
-            }
+        if (sweep > 0.5f) {
+            glowPaint.strokeWidth = arcW * 1.6f
+            glowPaint.color = LauncherTheme.withAlpha(color, 0x90)
+            glowPaint.maskFilter = BlurMaskFilter(arcW * 0.9f, BlurMaskFilter.Blur.NORMAL)
+            canvas.drawArc(oval, startAngle, sweep, false, glowPaint)
+            progressPaint.strokeWidth = arcW * 0.8f
+            progressPaint.color = color
+            canvas.drawArc(oval, startAngle, sweep, false, progressPaint)
         }
 
-        bigPaint.textSize = size * 0.26f
-        canvas.drawText(shown.roundToInt().toString(), cx, cy + bigPaint.textSize * 0.35f, bigPaint)
-        unitPaint.textSize = size * 0.065f
-        canvas.drawText(unitText, cx, cy + size * 0.2f, unitPaint)
+        numberPaint.color = pal.text
+        numberPaint.textSize = discR * 0.95f
+        canvas.drawText(shown.roundToInt().toString(), cx, cy + numberPaint.textSize * 0.30f, numberPaint)
+        unitPaint.color = color
+        unitPaint.textSize = discR * 0.17f
+        canvas.drawText(unitText, cx, cy + discR * 0.62f, unitPaint)
     }
 
     override fun onDetachedFromWindow() {

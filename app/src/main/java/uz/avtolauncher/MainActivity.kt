@@ -1,44 +1,32 @@
 package uz.avtolauncher
 
+import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
-import android.widget.LinearLayout
 
-/** To'liq bosh ekran (launcher). */
-class MainActivity : BaseDashActivity() {
-
-    override fun layoutRes() = R.layout.activity_main
+/**
+ * Bosh ekran (Home). O'zi hech narsa ko'rsatmaydi: har safar asosiy ekranni (DashActivity)
+ * ochadi va Navigator'ni yoniga qo'yishni so'raydi. Shu tufayli ilova doim bir xil ko'rinishda ochiladi.
+ */
+class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        findViewById<android.view.View>(R.id.btnSplit).setOnClickListener { openKey(Slots.SPLIT) }
+        window.decorView.setBackgroundColor(LauncherTheme.palette(this).surface)
     }
 
-    override fun buildTiles() {
-        if (!themeReady) return
-        tilesBox.removeAllViews()
-        for (row in 0 until 3) {
-            val rowView = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            tilesBox.addView(rowView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
-            for (col in 0 until 2) {
-                val slot = row * 2 + col
-                var key = Slots.get(this, slot)
-                if (!Slots.isValid(this, key)) {
-                    key = ""
-                    Slots.set(this, slot, "")
-                }
-                val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
-                lp.setMargins(dp(6), dp(6), dp(6), dp(6))
-                rowView.addView(makeTile(key, 60, 15f) { requestPick(slot) }, lp)
-            }
-        }
-    }
-
-    override fun saveSlot(slot: Int, key: String) {
-        if (slot in 0 until Slots.COUNT) Slots.set(this, slot, key)
+    override fun onResume() {
+        super.onResume()
+        startActivity(
+            Intent(this, DashActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .putExtra(DashActivity.EXTRA_START_NAV, true)
+        )
+        @Suppress("DEPRECATION")
+        overridePendingTransition(0, 0)
     }
 
     @Deprecated("Launcher — orqaga tugmasi hech narsa qilmaydi")
     override fun onBackPressed() {
-        // Bosh ekran: yopilmasin
     }
 }
