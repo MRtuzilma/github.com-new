@@ -20,28 +20,7 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
-
-      # BT Ekran (v4.3) kodini launcher ichiga qo'shish: tayyor classes.dex keyingi
-      # classesN.dex sifatida APK'ga qo'yiladi, so'ng APK tekislanib qayta imzolanadi.
-      - name: BT Ekran'ni launcherga qo'shish
-        run: |
-          set -e
-          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          echo "build-tools: $BT"
-          cp app/build/outputs/apk/debug/app-debug.apk merged.apk
-          N=$(unzip -Z1 merged.apk | grep -cE '^classes[0-9]*\.dex$')
-          NEXT=$((N + 1))
-          mkdir -p dexadd
-          cp btekran/classes.dex "dexadd/classes${NEXT}.dex"
-          (cd dexadd && zip -q -0 ../merged.apk "classes${NEXT}.dex")
-          zip -q -d merged.apk 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.MF' || true
-          "$BT/zipalign" -f -p 4 merged.apk aligned.apk
-          "$BT/apksigner" sign --ks app/debug.keystore --ks-pass pass:android \
-            --ks-key-alias androiddebugkey --key-pass pass:android \
-            --out AvtoLauncher.apk aligned.apk
-          "$BT/apksigner" verify AvtoLauncher.apk
-          unzip -Z1 AvtoLauncher.apk | grep -E '^classes[0-9]*\.dex$'
-
+          cp app/build/outputs/apk/debug/app-debug.apk AvtoLauncher.apk
       - uses: actions/upload-artifact@v4
         with:
           name: AvtoLauncher-apk
@@ -50,4 +29,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v2.4.${{ github.run_number }}" AvtoLauncher.apk --title "Avto Launcher v2.4.${{ github.run_number }}" --notes "Planshetga o'rnatish uchun AvtoLauncher.apk faylini yuklab oling. BT Ekran v4.3 launcher ichida." --latest
+          gh release create "v2.5.${{ github.run_number }}" AvtoLauncher.apk --title "Avto Launcher v2.5.${{ github.run_number }}" --notes "Planshetga o'rnatish uchun AvtoLauncher.apk faylini yuklab oling." --latest

@@ -52,6 +52,27 @@ class DashActivity : Activity() {
         private const val GPS_TIMEOUT_MS = 5000L
         private const val THEME_CHECK_MS = 5 * 60 * 1000L
         private const val YT_HOME = "https://m.youtube.com"
+
+        /**
+         * YouTube sahifa "ko'rinmay qoldi" (fon rejimi) deb o'ylasa, videoni o'zi pauza qiladi va
+         * Play bosilsa ham qayta to'xtatadi. Oyna ekranda ko'rinib turgani uchun sahifaga
+         * doim "ko'rinib turibdi" deb javob beramiz va fon-hodisalarini to'xtatamiz.
+         */
+        private const val KEEP_VISIBLE_JS = """
+            (function(){
+              if (window.__avtoVis) return; window.__avtoVis = true;
+              try {
+                Object.defineProperty(document, 'hidden', {get: function(){return false;}, configurable: true});
+                Object.defineProperty(document, 'webkitHidden', {get: function(){return false;}, configurable: true});
+                Object.defineProperty(document, 'visibilityState', {get: function(){return 'visible';}, configurable: true});
+                Object.defineProperty(document, 'webkitVisibilityState', {get: function(){return 'visible';}, configurable: true});
+                document.hasFocus = function(){ return true; };
+              } catch(e) {}
+              var stop = function(e){ e.stopImmediatePropagation(); };
+              ['visibilitychange','webkitvisibilitychange'].forEach(function(t){ document.addEventListener(t, stop, true); });
+              ['blur','pagehide','freeze'].forEach(function(t){ window.addEventListener(t, stop, true); });
+            })();
+        """
     }
 
     private lateinit var root: View
@@ -702,10 +723,23 @@ class DashActivity : Activity() {
         statViews["total"]?.text = valueText(kmNumber(st.totalKm), "km")
     }
 
-    /** "BT" tugmasi: launcher ichidagi BT Ekran (v4.3) ilovasini ochadi. */
+    /**
+     * "BT" tugmasi: alohida o'rnatilgan BT Ekran ilovasini ochadi (har qanday versiyasi).
+     * O'rnatilmagan bo'lsa — ogohlantirish chiqadi.
+     */
     private fun btSoon() {
+        val intent = packageManager.getLaunchIntentForPackage("uz.ekranbt")
+        if (intent == null) {
+            AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("BT Ekran")
+                .setMessage("BT Ekran ilovasi o'rnatilmagan.\nIltimos, BT Ekran ilovasini o'rnating.")
+                .setPositiveButton("Yopish", null)
+                .show()
+            return
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
-            startActivity(Intent().setClassName(packageName, "uz.ekranbt.MainActivity"))
+            startActivity(intent)
         } catch (e: Exception) {
             Toast.makeText(this, R.string.cannot_open, Toast.LENGTH_SHORT).show()
         }
@@ -753,6 +787,21 @@ class DashActivity : Activity() {
                 val scheme = request.url.scheme ?: return true
                 return scheme != "http" && scheme != "https"
             }
+
+            override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                view.evaluateJavascript(KEEP_VISIBLE_JS, null)
+            }
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                super.onPageFinished(view, url)
+                view.evaluateJavascript(KEEP_VISIBLE_JS, null)
+            }
+
+            override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                super.doUpdateVisitedHistory(view, url, isReload)
+                view.evaluateJavascript(KEEP_VISIBLE_JS, null)
+            }
         }
         web.webChromeClient = object : WebChromeClient() {
             override fun onShowCustomView(view: View, callback: CustomViewCallback) {
@@ -768,6 +817,11 @@ class DashActivity : Activity() {
             }
 
             override fun onHideCustomView() = hideCustomView()
+
+            override fun onProgressChanged(view: WebView, newProgress: Int) {
+                super.onProgressChanged(view, newProgress)
+                if (newProgress in 10..100) view.evaluateJavascript(KEEP_VISIBLE_JS, null)
+            }
         }
         if (Build.VERSION.SDK_INT >= 26) {
             // Video panel faol bo'lmaganda ham (masalan, Navigator bosilganda) to'xtab qolmasin

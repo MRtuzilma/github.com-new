@@ -17,6 +17,4 @@
     <string name="full_screen">To\'liq ekran</string>
     <string name="dash_name">Avto panel</string>
     <string name="no_navigator">Navigator topilmadi. Yandex Navigator\'ni o\'rnating yoki 1-tugmaga navigator qo\'ying.</string>
-    <string name="bt_admin_label">BT Ekran</string>
-    <string name="bt_admin_desc">Bluetooth uzilganda ekranni darhol bloklash uchun kerak.</string>
 </resources>
