@@ -78,6 +78,7 @@ abstract class BaseDashActivity : Activity() {
 
     protected lateinit var pal: LauncherTheme.Palette
     protected var hasWallpaper = false
+    protected val themeReady: Boolean get() = ::pal.isInitialized
     private var appliedDay: Boolean? = null
 
     // ---------------- Hayot sikli ----------------
@@ -194,7 +195,7 @@ abstract class BaseDashActivity : Activity() {
     /** "Avto" rejimda kun/tun almashganini tekshiradi. */
     private val themeCheck = object : Runnable {
         override fun run() {
-            if (appliedDay != LauncherTheme.isDay(this@MainActivity)) {
+            if (appliedDay != LauncherTheme.isDay(this@BaseDashActivity)) {
                 applyTheme()
                 buildTiles()
             }

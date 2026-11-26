@@ -14,7 +14,7 @@ class MainActivity : BaseDashActivity() {
     }
 
     override fun buildTiles() {
-        if (!::pal.isInitialized) return
+        if (!themeReady) return
         tilesBox.removeAllViews()
         for (row in 0 until 3) {
             val rowView = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }

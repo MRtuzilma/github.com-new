@@ -105,7 +105,7 @@ class DashActivity : BaseDashActivity() {
     }
 
     override fun buildTiles() {
-        if (!::pal.isInitialized) return
+        if (!themeReady) return
         tilesBox.removeAllViews()
         val keys = listOf(Slots.getMini(this, 0), Slots.getMini(this, 1), Slots.FULL)
         keys.forEachIndexed { idx, raw ->
