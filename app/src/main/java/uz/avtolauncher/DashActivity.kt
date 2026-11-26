@@ -80,6 +80,15 @@ class DashActivity : Activity() {
     private lateinit var btnPlay: ImageButton
     private lateinit var btnNext: ImageButton
     private lateinit var volumeOverlay: VolumeOverlayView
+    private lateinit var infoColumn: View
+    private lateinit var tripPanel: LinearLayout
+    private lateinit var tripStats: LinearLayout
+    private lateinit var gaugeBig: SpeedGaugeView
+    private lateinit var btnBt: TextView
+    private lateinit var btnBtTrip: TextView
+    private lateinit var videoBtns: View
+    private var tripMode = false
+    private val statViews = HashMap<String, TextView>()
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var pal: LauncherTheme.Palette
@@ -137,6 +146,19 @@ class DashActivity : Activity() {
         btnPlay = findViewById(R.id.btnPlay)
         btnNext = findViewById(R.id.btnNext)
         volumeOverlay = findViewById(R.id.volumeOverlay)
+        infoColumn = findViewById(R.id.infoColumn)
+        tripPanel = findViewById(R.id.tripPanel)
+        tripStats = findViewById(R.id.tripStats)
+        gaugeBig = findViewById(R.id.gaugeBig)
+        btnBt = findViewById(R.id.btnBt)
+        btnBtTrip = findViewById(R.id.btnBtTrip)
+        videoBtns = findViewById(R.id.videoBtns)
+
+        // Spidometrga bosilsa — safar rejimi (katta tezlik + statistika); yana bosilsa — qaytadi
+        gauge.setOnClickListener { setTripMode(true) }
+        gaugeBig.setOnClickListener { setTripMode(false) }
+        btnBt.setOnClickListener { startActivity(Intent(this, BtActivity::class.java)) }
+        btnBtTrip.setOnClickListener { startActivity(Intent(this, BtActivity::class.java)) }
 
         btnPrev.setOnClickListener { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS) }
         btnNext.setOnClickListener { sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT) }
@@ -156,12 +178,8 @@ class DashActivity : Activity() {
             if (r - l != or - ol || b - t != ob - ot) root.post { relayout() }
         }
 
-        if (!hasLocationPermission() && Build.VERSION.SDK_INT >= 23) {
-            requestPermissions(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-                REQ_LOCATION
-            )
-        }
+        firstRunSetup()
+        setTripMode(prefs().getBoolean("trip_mode", false))
         if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_START_NAV, false)) {
             root.postDelayed({ autoNavigator() }, 400)
         }
@@ -181,6 +199,13 @@ class DashActivity : Activity() {
         else registerReceiver(batteryReceiver, filter)
         handler.post(themeCheck)
         web.onResume()
+        val bf = IntentFilter().apply {
+            addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED)
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(btStateReceiver, bf, Context.RECEIVER_EXPORTED)
+        else registerReceiver(btStateReceiver, bf)
+        handler.post(statsTick)
     }
 
     override fun onResume() {
@@ -188,6 +213,8 @@ class DashActivity : Activity() {
         buildDock()
         refreshWeatherIfNeeded()
         updateStatus()
+        updateKeepScreenOn()
+        updateTripStats()
         if (waitingForSplit && !inMultiWindow) {
             // Navigator yoniga emas, butun ekranga ochildi — keyingi safar avtomatik urinmaymiz
             waitingForSplit = false
@@ -203,6 +230,11 @@ class DashActivity : Activity() {
             unregisterReceiver(batteryReceiver)
         } catch (e: IllegalArgumentException) {
         }
+        try {
+            unregisterReceiver(btStateReceiver)
+        } catch (e: IllegalArgumentException) {
+        }
+        handler.removeCallbacks(statsTick)
         // Ekran butunlay ko'rinmay qolganda video to'xtaydi. Navigator yonida tursa — to'xtamaydi.
         web.url?.let { prefs().edit().putString("url", it).apply() }
         web.onPause()
@@ -287,6 +319,19 @@ class DashActivity : Activity() {
             gaugeHolder.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.15f)
             clockCard.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
         }
+        // Safar paneli: keng bo'lsa yonma-yon, tor bo'lsa ustma-ust
+        val tripW = infoW
+        val tripH = if (wide) h.toFloat() else h * 1.55f / 2.55f
+        val tripGauge = findViewById<View>(R.id.tripGaugeHolder)
+        if (tripW > tripH * 1.25f) {
+            tripPanel.orientation = LinearLayout.HORIZONTAL
+            tripGauge.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.1f)
+            tripStats.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+        } else {
+            tripPanel.orientation = LinearLayout.VERTICAL
+            tripGauge.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.2f)
+            tripStats.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
         content.requestLayout()
     }
 
@@ -327,6 +372,12 @@ class DashActivity : Activity() {
         dockCard.setPadding(cm + dp(4), cm - dp(4), cm + dp(4), cm - dp(4))
 
         gauge.setPalette(pal)
+        gaugeBig.setPalette(pal)
+        for (b in arrayOf(btnBt, btnBtTrip)) {
+            b.background = neu(NeuDrawable.OVAL, 0, 3.5f, NeuDrawable.BUTTON)
+            b.setTextColor(pal.accent)
+        }
+        buildTripStats()
         volumeOverlay.setPalette(pal)
         compassWell.background = neu(NeuDrawable.OVAL, 0, 3f, NeuDrawable.INSET)
 
@@ -525,7 +576,163 @@ class DashActivity : Activity() {
         statusText.text = "$bat🔊 $vol%"
     }
 
+    // =================== Safar rejimi ===================
+
+    private fun setTripMode(on: Boolean) {
+        tripMode = on
+        prefs().edit().putBoolean("trip_mode", on).apply()
+        infoColumn.visibility = if (on) View.GONE else View.VISIBLE
+        tripPanel.visibility = if (on) View.VISIBLE else View.GONE
+        if (on) updateTripStats()
+    }
+
+    private val statsTick = object : Runnable {
+        override fun run() {
+            if (tripMode) updateTripStats()
+            handler.postDelayed(this, 30_000)
+        }
+    }
+
+    /** 6 ta neumorfik katakcha: 3 qator × 2 ustun. */
+    private fun buildTripStats() {
+        tripStats.removeAllViews()
+        statViews.clear()
+        val items = listOf(
+            "trip" to "Shu safar",
+            "avg" to "O'rtacha tezlik",
+            "max" to "Eng yuqori tezlik",
+            "time" to "Yo'lda vaqt",
+            "today" to "Bugun",
+            "total" to "Umumiy probeg"
+        )
+        val depth = dpf(5f)
+        val m = NeuDrawable.margin(depth).toInt()
+        for (row in 0 until 3) {
+            val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            tripStats.addView(r, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            for (col in 0 until 2) {
+                val (key, label) = items[row * 2 + col]
+                val tile = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = android.view.Gravity.CENTER
+                    background = NeuDrawable(pal, NeuDrawable.RECT, dpf(20f), depth, NeuDrawable.RAISED)
+                    setPadding(m + dp(4), m, m + dp(4), m)
+                }
+                val value = TextView(this).apply {
+                    textSize = 26f
+                    setTextColor(if (key == "trip") pal.accent else pal.text)
+                    typeface = android.graphics.Typeface.create("sans-serif-light", android.graphics.Typeface.NORMAL)
+                    maxLines = 1
+                    gravity = android.view.Gravity.CENTER
+                }
+                val cap = TextView(this).apply {
+                    text = label
+                    textSize = 12f
+                    setTextColor(pal.textDim)
+                    maxLines = 1
+                    gravity = android.view.Gravity.CENTER
+                }
+                tile.addView(value)
+                tile.addView(cap)
+                if (key == "trip") {
+                    tile.setOnLongClickListener {
+                        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                            .setMessage("Safar hisobini yangidan boshlaysizmi?")
+                            .setPositiveButton("Ha") { _, _ -> Trip.reset(this); updateTripStats() }
+                            .setNegativeButton("Yo'q", null).show()
+                        true
+                    }
+                }
+                statViews[key] = value
+                r.addView(tile, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+            }
+        }
+        updateTripStats()
+    }
+
+    private fun fmtKm(km: Double): String = when {
+        km < 10 -> String.format(java.util.Locale.US, "%.1f km", km)
+        else -> String.format(java.util.Locale("ru"), "%,d km", km.toLong())
+    }
+
+    private fun updateTripStats() {
+        if (statViews.isEmpty()) return
+        val st = Trip.stats(this)
+        val mins = st.movingMs / 60_000
+        statViews["trip"]?.text = fmtKm(st.tripKm)
+        statViews["avg"]?.text = "${st.avgKmh.toInt()} km/soat"
+        statViews["max"]?.text = "${st.maxKmh.toInt()} km/soat"
+        statViews["time"]?.text = String.format(java.util.Locale.US, "%d:%02d", mins / 60, mins % 60)
+        statViews["today"]?.text = fmtKm(st.todayKm)
+        statViews["total"]?.text = fmtKm(st.totalKm)
+    }
+
+    // =================== BT: ekran yoniq turishi ===================
+
+    private val btStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            // Asosiy ishni BtReceiver qiladi; bu yerda faqat ekran holati va statistikani yangilaymiz
+            root.postDelayed({
+                updateKeepScreenOn()
+                updateTripStats()
+            }, 500)
+        }
+    }
+
+    /** BT Ekran: mashina Bluetooth'iga ulangan bo'lsa — ekran o'chmaydi. */
+    private fun updateKeepScreenOn() {
+        val on = !BtCore.keepOn(this) || BtCore.isConnected(this)
+        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    // =================== Birinchi sozlash ===================
+
+    private fun firstRunSetup() {
+        val need = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= 23 && !hasLocationPermission()) {
+            need.add(Manifest.permission.ACCESS_FINE_LOCATION)
+            need.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+        if (Build.VERSION.SDK_INT >= 31 &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+        ) need.add(Manifest.permission.BLUETOOTH_CONNECT)
+        if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), REQ_LOCATION)
+        else askAdminOnce()
+    }
+
+    /** Administrator ruxsati (BT uzilganda ekranni qulflash uchun) — launcher sozlanayotganda bir marta so'raladi. */
+    private fun askAdminOnce() {
+        if (BtCore.isAdmin(this) || prefs().getBoolean("admin_asked", false)) return
+        prefs().edit().putBoolean("admin_asked", true).apply()
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("Administrator ruxsati")
+            .setMessage(
+                "Mashina Bluetooth'i uzilganda ekran avtomatik o'chib qulflanishi uchun launcherga administrator ruxsati kerak.\n\n" +
+                        "Keyingi oynada «Faollashtirish» (Activate) tugmasini bosing."
+            )
+            .setPositiveButton("Davom etish") { _, _ ->
+                try {
+                    startActivity(BtCore.adminIntent(this))
+                } catch (e: Exception) {
+                }
+            }
+            .setNegativeButton("Keyinroq", null)
+            .show()
+    }
+
     // =================== YouTube ===================
+
+    private val fadeVideoButtons = Runnable {
+        videoBtns.animate().alpha(0.25f).setDuration(400).start()
+    }
+
+    private fun showVideoButtons() {
+        handler.removeCallbacks(fadeVideoButtons)
+        videoBtns.animate().cancel()
+        videoBtns.alpha = 1f
+        handler.postDelayed(fadeVideoButtons, 3000)
+    }
 
     private fun setupVideo(state: Bundle?) {
         CookieManager.getInstance().setAcceptCookie(true)
@@ -557,6 +764,16 @@ class DashActivity : Activity() {
 
             override fun onHideCustomView() = hideCustomView()
         }
+        if (Build.VERSION.SDK_INT >= 26) {
+            // Video panel faol bo'lmaganda ham (masalan, Navigator bosilganda) to'xtab qolmasin
+            web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+        }
+        web.settings.javaScriptCanOpenWindowsAutomatically = false
+        web.setOnTouchListener { _, _ ->
+            showVideoButtons()
+            false
+        }
+        showVideoButtons()
         if (state != null) web.restoreState(state)
         if (web.url == null) web.loadUrl(prefs().getString("url", YT_HOME) ?: YT_HOME)
 
@@ -638,6 +855,7 @@ class DashActivity : Activity() {
         if (requestCode == REQ_LOCATION) {
             startGps()
             refreshWeatherIfNeeded()
+            askAdminOnce()
         }
     }
 
@@ -647,6 +865,9 @@ class DashActivity : Activity() {
             lastLocation = location
             val kmh = if (location.hasSpeed()) location.speed * 3.6f else 0f
             gauge.setSpeed(if (kmh < 2f) 0f else kmh)
+            gaugeBig.setSpeed(if (kmh < 2f) 0f else kmh)
+            Trip.onLocation(applicationContext, location)
+            if (tripMode) updateTripStats()
             if (location.hasBearing() && kmh >= 5f) {
                 compassArrow.rotation = location.bearing
                 compassText.text = Weather.direction(location.bearing)
@@ -670,6 +891,7 @@ class DashActivity : Activity() {
 
     private val gpsTimeout = Runnable {
         gauge.setSpeed(0f)
+        gaugeBig.setSpeed(0f)
         gpsHint.setText(R.string.gps_wait)
         gpsHint.visibility = View.VISIBLE
     }

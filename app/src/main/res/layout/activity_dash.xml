@@ -34,41 +34,42 @@
                     android:layout_height="match_parent" />
 
                 <LinearLayout
+                    android:id="@+id/videoBtns"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="bottom|end"
-                    android:layout_margin="8dp"
+                    android:layout_gravity="top|end"
+                    android:layout_margin="6dp"
                     android:orientation="horizontal">
 
                     <ImageButton
                         android:id="@+id/btnVideoBack"
-                        android:layout_width="38dp"
-                        android:layout_height="38dp"
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
                         android:background="@drawable/video_btn"
                         android:contentDescription="back"
-                        android:padding="9dp"
+                        android:padding="6dp"
                         android:scaleType="fitCenter"
                         android:src="@drawable/ic_back" />
 
                     <ImageButton
                         android:id="@+id/btnVideoHome"
-                        android:layout_width="38dp"
-                        android:layout_height="38dp"
-                        android:layout_marginStart="8dp"
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
+                        android:layout_marginStart="6dp"
                         android:background="@drawable/video_btn"
                         android:contentDescription="home"
-                        android:padding="9dp"
+                        android:padding="6dp"
                         android:scaleType="fitCenter"
                         android:src="@drawable/ic_home" />
 
                     <ImageButton
                         android:id="@+id/btnVideoExpand"
-                        android:layout_width="38dp"
-                        android:layout_height="38dp"
-                        android:layout_marginStart="8dp"
+                        android:layout_width="28dp"
+                        android:layout_height="28dp"
+                        android:layout_marginStart="6dp"
                         android:background="@drawable/video_btn"
                         android:contentDescription="expand"
-                        android:padding="9dp"
+                        android:padding="6dp"
                         android:scaleType="fitCenter"
                         android:src="@drawable/ic_fullscreen" />
                 </LinearLayout>
@@ -106,6 +107,16 @@
                             android:id="@+id/gauge"
                             android:layout_width="match_parent"
                             android:layout_height="match_parent" />
+
+                        <TextView
+                            android:id="@+id/btnBt"
+                            android:layout_width="50dp"
+                            android:layout_height="50dp"
+                            android:layout_gravity="top|start"
+                            android:fontFamily="sans-serif-medium"
+                            android:gravity="center"
+                            android:text="BT"
+                            android:textSize="14sp" />
 
                         <TextView
                             android:id="@+id/gpsHint"
@@ -293,6 +304,44 @@
                             android:orientation="horizontal" />
                     </HorizontalScrollView>
                 </LinearLayout>
+            </LinearLayout>
+
+            <!-- Safar rejimi: katta spidometr + statistika -->
+            <LinearLayout
+                android:id="@+id/tripPanel"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <FrameLayout
+                    android:id="@+id/tripGaugeHolder"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1.15">
+
+                    <uz.avtolauncher.SpeedGaugeView
+                        android:id="@+id/gaugeBig"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent" />
+
+                    <TextView
+                        android:id="@+id/btnBtTrip"
+                        android:layout_width="50dp"
+                        android:layout_height="50dp"
+                        android:layout_gravity="top|start"
+                        android:fontFamily="sans-serif-medium"
+                        android:gravity="center"
+                        android:text="BT"
+                        android:textSize="14sp" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:id="@+id/tripStats"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:orientation="vertical" />
             </LinearLayout>
 
             <uz.avtolauncher.VolumeOverlayView

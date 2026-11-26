@@ -59,14 +59,15 @@ class SpeedGaugeView @JvmOverloads constructor(
     private val oval = RectF()
     private val unitText = context.getString(R.string.kmh).uppercase()
 
-    init {
-        // Yoyning yorug'lik (glow) effekti uchun
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
-    }
+    // Yoy va raqam alohida rasmga chiziladi va faqat tezlik raqami o'zgarganda qayta chiziladi.
+    // Bu asosiy oqimni bo'sh qoldiradi (YouTube qotmasligi uchun).
+    private var dynLayer: Bitmap? = null
+    private var dynSpeed = -1
 
     fun setPalette(p: LauncherTheme.Palette) {
         pal = p
         staticLayer = null
+        dynSpeed = -1
         invalidate()
     }
 
@@ -78,7 +79,7 @@ class SpeedGaugeView @JvmOverloads constructor(
             interpolator = DecelerateInterpolator()
             addUpdateListener {
                 shown = it.animatedValue as Float
-                invalidate()
+                if (shown.roundToInt() != dynSpeed) invalidate()
             }
             start()
         }
@@ -93,6 +94,8 @@ class SpeedGaugeView @JvmOverloads constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         staticLayer = null
+        dynLayer = null
+        dynSpeed = -1
     }
 
     // Geometriya
@@ -172,12 +175,25 @@ class SpeedGaugeView @JvmOverloads constructor(
         if (width <= 0 || height <= 0 || outerR <= 0f) return
         val layer = staticLayer ?: buildStatic().also { staticLayer = it }
         canvas.drawBitmap(layer, 0f, 0f, null)
+        val v = shown.roundToInt()
+        val dyn = dynLayer ?: Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
+            dynLayer = it
+            dynSpeed = -1
+        }
+        if (v != dynSpeed) {
+            dyn.eraseColor(Color.TRANSPARENT)
+            drawDynamic(Canvas(dyn), v.toFloat())
+            dynSpeed = v
+        }
+        canvas.drawBitmap(dyn, 0f, 0f, null)
+    }
 
+    private fun drawDynamic(canvas: Canvas, speed: Float) {
         val cx = width / 2f
         val cy = height / 2f
-        val color = colorFor(shown)
+        val color = colorFor(speed)
         oval.set(cx - arcR, cy - arcR, cx + arcR, cy + arcR)
-        val sweep = sweepAngle * (shown / maxSpeed)
+        val sweep = sweepAngle * (speed / maxSpeed)
         if (sweep > 0.5f) {
             glowPaint.strokeWidth = arcW * 1.6f
             glowPaint.color = LauncherTheme.withAlpha(color, 0x90)
@@ -187,10 +203,9 @@ class SpeedGaugeView @JvmOverloads constructor(
             progressPaint.color = color
             canvas.drawArc(oval, startAngle, sweep, false, progressPaint)
         }
-
         numberPaint.color = pal.text
         numberPaint.textSize = discR * 0.95f
-        canvas.drawText(shown.roundToInt().toString(), cx, cy + numberPaint.textSize * 0.30f, numberPaint)
+        canvas.drawText(speed.roundToInt().toString(), cx, cy + numberPaint.textSize * 0.30f, numberPaint)
         unitPaint.color = color
         unitPaint.textSize = discR * 0.17f
         canvas.drawText(unitText, cx, cy + discR * 0.62f, unitPaint)
