@@ -307,15 +307,14 @@ class DashActivity : Activity() {
         statTitle = findViewById(R.id.statTitle)
         statSub = findViewById(R.id.statSub)
         // Holat tugmachalari
+        wifiChip.compoundDrawablePadding = 0
+        btChip.compoundDrawablePadding = 0
         wifiChip.setOnClickListener { openSettings(android.provider.Settings.ACTION_WIFI_SETTINGS) }
         btChip.setOnClickListener { openSettings(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS) }
         batteryChip.setOnClickListener { showStat("bat") }
         statusText.setOnClickListener { showStat("vol") }
         setupStatOverlay()
         clockInner = findViewById(R.id.clockInner)
-        // Soat kartasi tarkibi sig'masa — proporsional kichraytiramiz
-        clockCard.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> clockCard.post { fitClock() } }
-        clockInner.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> clockCard.post { fitClock() } }
         btnTheme = findViewById(R.id.btnTheme)
         dockCard = findViewById(R.id.dockCard)
         dockRow = findViewById(R.id.dockRow)
@@ -808,11 +807,12 @@ class DashActivity : Activity() {
         chipIcon(statusText, R.drawable.ic_volume, if (vol == 0) pal.textDim else pal.accent)
         // Wi-Fi
         val wifi = wifiConnected()
-        wifiChip.text = if (wifi) "Wi-Fi" else "Yo'q"
+        wifiChip.text = "" // faqat belgi — ixcham
         chipIcon(wifiChip, if (wifi) R.drawable.ic_wifi else R.drawable.ic_wifi_off, if (wifi) pal.accent else pal.textDim)
         // Bluetooth
         val bt = btState()
-        btChip.text = when (bt) { 2 -> "Ulangan"; 1 -> "Yoqiq"; else -> "O'chiq" }
+        btChip.text = ""
+        btChip.contentDescription = when (bt) { 2 -> "Bluetooth ulangan"; 1 -> "Bluetooth yoqiq"; else -> "Bluetooth o'chiq" }
         chipIcon(btChip, if (bt == 2) R.drawable.ic_bt_connected else R.drawable.ic_bt, if (bt == 2) pal.accent else pal.textDim)
         if (statMode.isNotEmpty()) updateStat()
     }
@@ -1118,19 +1118,7 @@ class DashActivity : Activity() {
         if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), REQ_LOCATION)
     }
 
-    /** Soat kartasidagi matnlar kartaga sig'masa, ularni birga kichraytiradi (hech narsa kesilmaydi). */
-    private fun fitClock() {
-        val availW = clockCard.width - clockCard.paddingLeft - clockCard.paddingRight
-        val availH = clockCard.height - clockCard.paddingTop - clockCard.paddingBottom
-        val w = clockInner.width
-        val h = clockInner.height
-        if (availW <= 0 || availH <= 0 || w <= 0 || h <= 0) return
-        val scale = minOf(1f, availW.toFloat() / w, availH.toFloat() / h)
-        if (kotlin.math.abs(clockInner.scaleX - scale) > 0.01f) {
-            clockInner.scaleX = scale
-            clockInner.scaleY = scale
-        }
-    }
+
 
     // =================== YouTube: butun ekran (Navigator ustida ham) ===================
 
