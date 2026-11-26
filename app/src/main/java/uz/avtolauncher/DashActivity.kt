@@ -72,6 +72,19 @@ class DashActivity : Activity() {
               ['visibilitychange','webkitvisibilitychange'].forEach(function(t){ document.addEventListener(t, stop, true); });
               ['blur','pagehide','freeze'].forEach(function(t){ window.addEventListener(t, stop, true); });
 
+              // YouTube'ning "to'liq ekran" tugmasi: haqiqiy fullscreen o'rniga launcher oynasini kattalashtiramiz
+              var fs = function(){ try { AvtoBridge.toggle(); } catch(e) {} return Promise.resolve(); };
+              try {
+                Element.prototype.requestFullscreen = fs;
+                Element.prototype.webkitRequestFullscreen = fs;
+                Element.prototype.webkitRequestFullScreen = fs;
+                HTMLVideoElement.prototype.webkitEnterFullscreen = fs;
+                document.exitFullscreen = fs;
+                document.webkitExitFullscreen = fs;
+                document.webkitCancelFullScreen = fs;
+                if (screen.orientation && screen.orientation.lock) screen.orientation.lock = function(){ return Promise.resolve(); };
+              } catch(e) {}
+
               // Pauza qo'riqchisi: foydalanuvchi o'zi bosmagan "avtomatik" pauzalarni bekor qiladi.
               // (Kattalashtirib-kichraytirgandan keyin Play bosilsa ham pauzaga tushib qolish xatosi.)
               var P = HTMLMediaElement.prototype, origPause = P.pause;
@@ -250,6 +263,7 @@ class DashActivity : Activity() {
             if (r - l != or - ol || b - t != ob - ot) root.post { relayout() }
         }
 
+        registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
         firstRunSetup()
         setTripMode(prefs().getBoolean("trip_mode", false))
         if (savedInstanceState == null && intent.getBooleanExtra(EXTRA_START_NAV, false)) {
@@ -271,6 +285,8 @@ class DashActivity : Activity() {
         else registerReceiver(batteryReceiver, filter)
         handler.post(themeCheck)
         web.onResume()
+        isStartedNow = true
+        updateHostHidden()
         handler.post(statsTick)
     }
 
@@ -280,6 +296,7 @@ class DashActivity : Activity() {
         refreshWeatherIfNeeded()
         updateStatus()
         updateTripStats()
+        tryAttachHost()
         if (waitingForSplit && !inMultiWindow) {
             // Navigator yoniga emas, butun ekranga ochildi — keyingi safar avtomatik urinmaymiz
             waitingForSplit = false
@@ -296,16 +313,21 @@ class DashActivity : Activity() {
         } catch (e: IllegalArgumentException) {
         }
         handler.removeCallbacks(statsTick)
-        // Ekran butunlay ko'rinmay qolganda video to'xtaydi. Navigator yonida tursa — to'xtamaydi.
+        // Launcher ko'rinmay qolsa ham YouTube fonda davom etadi (oyna 1×1 bo'ladi).
+        // Ekran o'chganda esa (screenOffReceiver) video to'xtaydi.
         web.url?.let { prefs().edit().putString("url", it).apply() }
-        web.onPause()
+        isStartedNow = false
+        updateHostHidden()
         super.onStop()
     }
 
     override fun onDestroy() {
         hideCustomView()
-        if (overlayHoldsWeb) overlayRoot?.removeView(web)
-        removeOverlayWindow()
+        try {
+            unregisterReceiver(screenOffReceiver)
+        } catch (e: IllegalArgumentException) {
+        }
+        host?.detach()
         web.destroy()
         super.onDestroy()
     }
@@ -425,6 +447,7 @@ class DashActivity : Activity() {
         videoCard.setPadding(cm + dp(6), cm + dp(6), cm + dp(6), cm + dp(6))
         // Burchaklar niqob bilan yumaloqlanadi (clip qilinmaydi — video silliq ishlaydi)
         findViewById<CornerMaskView>(R.id.videoMask).setColor(pal.surface)
+        host?.setMaskColor(pal.surface)
         btnNav.background = neu(NeuDrawable.OVAL, 0, 3.5f, NeuDrawable.BUTTON)
         btnNav.imageTintList = LauncherTheme.tint(pal.accent)
         val pillDepth = dpf(5f)
@@ -497,21 +520,21 @@ class DashActivity : Activity() {
                             LauncherTheme.setAccent(this, i)
                             applyTheme()
                             d.dismiss()
-                        }.show()
+                        }.showSafe()
                     1 -> AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                         .setTitle("Rejim")
                         .setSingleChoiceItems(LauncherTheme.MODE_NAMES.toTypedArray(), LauncherTheme.mode(this)) { d, i ->
                             LauncherTheme.setMode(this, i)
                             applyTheme()
                             d.dismiss()
-                        }.show()
+                        }.showSafe()
                     2 -> {
                         prefs().edit().putBoolean("split_failed", false).apply()
                         launchNavigatorAdjacent(force = true)
                     }
                 }
             }
-            .show()
+            .showSafe()
     }
 
     // =================== Ilova tugmalari (dock) ===================
@@ -579,7 +602,7 @@ class DashActivity : Activity() {
                 Slots.saveDock(this, list)
                 buildDock()
             }
-            .show()
+            .showSafe()
     }
 
     private fun pickApp(slot: Int) {
@@ -729,7 +752,7 @@ class DashActivity : Activity() {
                         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                             .setMessage("Safar hisobini yangidan boshlaysizmi?")
                             .setPositiveButton("Ha") { _, _ -> Trip.reset(this); updateTripStats() }
-                            .setNegativeButton("Yo'q", null).show()
+                            .setNegativeButton("Yo'q", null).showSafe()
                         true
                     }
                 }
@@ -775,7 +798,7 @@ class DashActivity : Activity() {
                 .setTitle("BT Ekran")
                 .setMessage("BT Ekran ilovasi o'rnatilmagan.\nIltimos, BT Ekran ilovasini o'rnating.")
                 .setPositiveButton("Yopish", null)
-                .show()
+                .showSafe()
             return
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -795,6 +818,7 @@ class DashActivity : Activity() {
             need.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
         if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), REQ_LOCATION)
+        else askOverlayOnce()
     }
 
     /** Soat kartasidagi matnlar kartaga sig'masa, ularni birga kichraytiradi (hech narsa kesilmaydi). */
@@ -811,19 +835,39 @@ class DashActivity : Activity() {
         }
     }
 
-    // =================== YouTube: butun ekran (Navigator ustida ham) ===================
+    // =================== YouTube: alohida oyna (kattalashtirishda to'xtamaydi, fonda ishlaydi) ===================
 
-    private var overlayRoot: FrameLayout? = null
-    private var overlayHoldsWeb = false
+    private var host: VideoHost? = null
 
     private fun canOverlay() = Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this)
 
+    /** Ruxsat bo'lsa — YouTube'ni alohida oynaga o'tkazamiz (bir marta). */
+    private fun tryAttachHost() {
+        val h = host ?: return
+        if (h.attached || !canOverlay()) return
+        if (videoClip.width <= 0) {
+            videoClip.post { tryAttachHost() }
+            return
+        }
+        if (h.attach()) {
+            h.setMaskColor(pal.surface)
+            findViewById<View>(R.id.videoMask).visibility = View.GONE
+        }
+    }
+
+    private fun askOverlayOnce() {
+        if (canOverlay() || prefs().getBoolean("overlay_asked", false)) return
+        prefs().edit().putBoolean("overlay_asked", true).apply()
+        askOverlayPermission()
+    }
+
     private fun askOverlayPermission() {
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-            .setTitle("Butun ekranli video")
+            .setTitle("YouTube oynasi")
             .setMessage(
-                "Video butun ekranga, Navigator ustiga ham chiqishi uchun «Boshqa ilovalar ustida ko'rsatish» " +
-                        "ruxsati kerak.\n\nKeyingi oynada Avto Launcher'ga ruxsat bering va orqaga qayting."
+                "YouTube kattalashtirilganda va kichraytirilganda to'xtab qolmasligi, butun ekranga (Navigator ustiga ham) " +
+                        "chiqishi va fonda ham ishlashi uchun «Boshqa ilovalar ustida ko'rsatish» ruxsati kerak.\n\n" +
+                        "Keyingi oynada Avto Launcher'ga ruxsat bering va orqaga qayting."
             )
             .setPositiveButton("Ruxsat berish") { _, _ ->
                 try {
@@ -834,127 +878,60 @@ class DashActivity : Activity() {
                     Toast.makeText(this, R.string.cannot_open, Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("Faqat shu oynada") { _, _ -> setExpanded(true) }
-            .show()
+            .setNegativeButton("Keyinroq", null)
+            .showSafe()
     }
 
-    /** Butun ekranli oynani yaratadi (hamma ilovalar ustida). */
-    private fun createOverlay(): FrameLayout? {
-        overlayRoot?.let { return it }
-        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val root = object : FrameLayout(this) {
-            override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-                if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                    exitOverlay()
-                    return true
-                }
-                return super.dispatchKeyEvent(event)
-            }
+    /** ⤢ tugmasi va YouTube'ning o'z "to'liq ekran" tugmasi shu yerga keladi. */
+    private fun toggleFull() {
+        val h = host
+        if (h != null && h.attached) {
+            h.setFull(!h.full)
+            return
         }
-        root.setBackgroundColor(0xFF000000.toInt())
-        root.isFocusable = true
-        root.isFocusableInTouchMode = true
-        @Suppress("DEPRECATION")
-        val type = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else WindowManager.LayoutParams.TYPE_PHONE
-        val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            type,
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN or
-                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
-            android.graphics.PixelFormat.OPAQUE
-        )
-        if (Build.VERSION.SDK_INT >= 28) {
-            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
-        @Suppress("DEPRECATION")
-        root.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
-        return try {
-            wm.addView(root, lp)
-            overlayRoot = root
-            root.requestFocus()
-            root
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    /** Yopish tugmasi (✕) — butun ekranli oynaning yuqori o'ng burchagida. */
-    private fun addOverlayCloseButton(root: FrameLayout, onClose: () -> Unit) {
-        val close = ImageButton(this).apply {
-            setImageResource(R.drawable.ic_close)
-            setBackgroundResource(R.drawable.video_btn)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            val p = dp(11)
-            setPadding(p, p, p, p)
-            alpha = 0.8f
-            setOnClickListener { onClose() }
-        }
-        root.addView(close, FrameLayout.LayoutParams(dp(46), dp(46), android.view.Gravity.TOP or android.view.Gravity.END).apply {
-            setMargins(dp(14), dp(14), dp(14), dp(14))
-        })
-    }
-
-    /** ⤢ tugmasi: YouTube oynasi butun ekranga chiqadi (video to'xtamaydi). */
-    private fun enterOverlay() {
-        if (!canOverlay()) {
+        if (!canOverlay() && !expanded) {
             askOverlayPermission()
             return
         }
-        if (overlayHoldsWeb) return
-        val root = createOverlay() ?: run { setExpanded(true); return }
-        rememberPlaying()
-        videoClip.removeView(web)
-        root.addView(web, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        addOverlayCloseButton(root) { exitOverlay() }
-        overlayHoldsWeb = true
-        resumeIfWasPlaying()
+        setExpanded(!expanded)
     }
 
-    private fun exitOverlay() {
-        val root = overlayRoot ?: return
-        if (customView != null) {
-            hideCustomView()
-            return
+    /** Dialog ochilganda YouTube oynasi uni to'sib qo'ymasligi uchun vaqtincha yashiriladi. */
+    private var openDialogs = 0
+
+    private fun AlertDialog.Builder.showSafe(): AlertDialog {
+        openDialogs++
+        updateHostHidden()
+        val d = show()
+        d.setOnDismissListener {
+            openDialogs = (openDialogs - 1).coerceAtLeast(0)
+            // Ichma-ich dialoglar uchun biroz kutamiz
+            handler.postDelayed({ updateHostHidden() }, 150)
         }
-        if (overlayHoldsWeb) {
-            rememberPlaying()
-            root.removeView(web)
-            videoClip.addView(web, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-            overlayHoldsWeb = false
-            resumeIfWasPlaying()
-        }
-        removeOverlayWindow()
+        return d
     }
 
-    private fun removeOverlayWindow() {
-        val root = overlayRoot ?: return
-        try {
-            (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(root)
-        } catch (e: Exception) {
-        }
-        overlayRoot = null
+    private fun updateHostHidden() {
+        host?.setHidden(openDialogs > 0 || !isStartedNow)
     }
 
-    private var wasPlaying = false
+    private var isStartedNow = false
 
-    private fun rememberPlaying() {
-        web.evaluateJavascript("(function(){var v=document.querySelector('video');return !!(v&&!v.paused&&!v.ended);})()") {
-            wasPlaying = it == "true"
-        }
-    }
-
-    /** Oyna almashganda video to'xtab qolgan bo'lsa — davom ettiradi. */
-    private fun resumeIfWasPlaying() {
-        handler.postDelayed({
+    /** Ekran o'chganda (mashina to'xtab, ekran bloklanganda) video ham to'xtaydi. */
+    private val screenOffReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
             web.evaluateJavascript(
-                "(function(){var v=document.querySelector('video');if(v&&v.paused&&!v.ended&&window.__avtoWant){v.play().catch(function(){});}})()",
-                null
+                "(function(){window.__avtoWant=false;var v=document.querySelector('video');if(v)v.pause();})()", null
             )
-        }, 600)
+        }
+    }
+
+    /** YouTube sahifasidan keladigan chaqiruvlar (to'liq ekran tugmasi). */
+    inner class Bridge {
+        @android.webkit.JavascriptInterface
+        fun toggle() {
+            runOnUiThread { toggleFull() }
+        }
     }
 
     // =================== YouTube ===================
@@ -1012,16 +989,9 @@ class DashActivity : Activity() {
                 }
                 customView = view
                 customCallback = callback
-                val ov = if (canOverlay()) createOverlay() else null
-                if (ov != null) {
-                    // Navigator ustida ham — butun ekran
-                    ov.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-                    addOverlayCloseButton(ov) { hideCustomView() }
-                } else {
-                    fullHolder.addView(view, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-                    fullHolder.visibility = View.VISIBLE
-                    findViewById<View>(R.id.btnExitFull).bringToFront()
-                }
+                fullHolder.addView(view, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                fullHolder.visibility = View.VISIBLE
+                findViewById<View>(R.id.btnExitFull).bringToFront()
             }
 
             override fun onHideCustomView() = hideCustomView()
@@ -1041,14 +1011,18 @@ class DashActivity : Activity() {
             false
         }
         showVideoButtons()
+        web.addJavascriptInterface(Bridge(), "AvtoBridge")
+        host = VideoHost(this, web, videoBtns, videoClip).also { h ->
+            h.onBack = { if (web.canGoBack()) web.goBack(); true }
+        }
+        // Panel joylashuvi o'zgarsa — YouTube oynasi ham video karta ustiga moslashadi
+        videoClip.viewTreeObserver.addOnGlobalLayoutListener { host?.sync() }
         if (state != null) web.restoreState(state)
         if (web.url == null) web.loadUrl(prefs().getString("url", YT_HOME) ?: YT_HOME)
 
         findViewById<ImageButton>(R.id.btnVideoBack).setOnClickListener { if (web.canGoBack()) web.goBack() }
         findViewById<ImageButton>(R.id.btnVideoHome).setOnClickListener { web.loadUrl(YT_HOME) }
-        findViewById<ImageButton>(R.id.btnVideoExpand).setOnClickListener {
-            if (expanded) setExpanded(false) else enterOverlay()
-        }
+        findViewById<ImageButton>(R.id.btnVideoExpand).setOnClickListener { toggleFull() }
     }
 
     /** YouTube butun oynani egallaydi (alohida ekrandek). */
@@ -1066,15 +1040,8 @@ class DashActivity : Activity() {
         val cb = customCallback
         customCallback = null
         cb?.onCustomViewHidden()
-        // Butun ekranli oyna faqat shu video uchun ochilgan bo'lsa — yopamiz
-        if (overlayRoot != null && !overlayHoldsWeb) removeOverlayWindow()
-        else overlayRoot?.let { r ->
-            // web hali oynada: faqat ortiqcha ✕ tugmalarini tozalaymiz
-            for (i in r.childCount - 1 downTo 0) if (r.getChildAt(i) is ImageButton) r.removeViewAt(i)
-            addOverlayCloseButton(r) { exitOverlay() }
-        }
-        resumeIfWasPlaying()
     }
+
 
 
     // =================== Navigator yonida ===================
@@ -1122,7 +1089,7 @@ class DashActivity : Activity() {
                 Slots.navigatorPackage(this)?.let { Slots.open(this, it) }
             }
             .setNegativeButton("Yopish", null)
-            .show()
+            .showSafe()
     }
 
     // =================== GPS: tezlik va kompas ===================
@@ -1135,6 +1102,7 @@ class DashActivity : Activity() {
         if (requestCode == REQ_LOCATION) {
             startGps()
             refreshWeatherIfNeeded()
+            askOverlayOnce()
         }
     }
 
