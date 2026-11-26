@@ -30,11 +30,17 @@ class AppDrawerActivity : Activity() {
 
     private var entries: List<Entry> = emptyList()
     private lateinit var grid: GridView
+    private lateinit var pal: LauncherTheme.Palette
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_drawer)
         grid = findViewById(R.id.grid)
+        pal = LauncherTheme.palette(this)
+        findViewById<View>(R.id.drawerRoot).setBackgroundColor(pal.bg)
+        window.statusBarColor = pal.bg
+        window.navigationBarColor = pal.bg
+        findViewById<TextView>(R.id.drawerTitle).setTextColor(pal.text)
 
         val slot = intent.getIntExtra(EXTRA_SLOT, -1)
         val pickMode = slot >= 0
@@ -101,12 +107,12 @@ class AppDrawerActivity : Activity() {
             val holder = convertView as? LinearLayout ?: LinearLayout(this@AppDrawerActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                setBackgroundResource(R.drawable.tile_bg)
+                background = LauncherTheme.tileBg(pal, dp(20).toFloat(), false)
                 setPadding(dp(8), dp(14), dp(8), dp(12))
                 layoutParams = AbsListView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(130))
                 addView(ImageView(context), LinearLayout.LayoutParams(dp(56), dp(56)))
                 addView(TextView(context).apply {
-                    setTextColor(getColor(R.color.text))
+                    setTextColor(pal.text)
                     textSize = 14f
                     gravity = Gravity.CENTER
                     maxLines = 2
@@ -116,7 +122,9 @@ class AppDrawerActivity : Activity() {
                 })
             }
             val e = entries[position]
-            (holder.getChildAt(0) as ImageView).setImageDrawable(e.icon)
+            val iv = holder.getChildAt(0) as ImageView
+            iv.setImageDrawable(e.icon)
+            iv.imageTintList = if (Slots.isBuiltin(e.key)) LauncherTheme.tint(pal.accent) else null
             (holder.getChildAt(1) as TextView).text = e.label
             return holder
         }

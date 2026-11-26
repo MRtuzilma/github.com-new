@@ -28,8 +28,8 @@ class SpeedGaugeView @JvmOverloads constructor(
     private var shown = 0f
     private var animator: ValueAnimator? = null
 
-    private val accent = context.getColor(R.color.accent)
-    private val dim = context.getColor(R.color.text_dim)
+    private var accent = context.getColor(R.color.accent)
+    private var dim = context.getColor(R.color.text_dim)
 
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -61,6 +61,18 @@ class SpeedGaugeView @JvmOverloads constructor(
     }
     private val oval = RectF()
     private val unitText = context.getString(R.string.kmh)
+
+    /** Tema o'zgarganda ranglarni yangilash. */
+    fun setColors(accent: Int, track: Int, text: Int, dim: Int) {
+        this.accent = accent
+        this.dim = dim
+        trackPaint.color = track
+        tickPaint.color = dim
+        labelPaint.color = dim
+        unitPaint.color = dim
+        bigPaint.color = text
+        invalidate()
+    }
 
     fun setSpeed(kmh: Float) {
         val target = kmh.coerceIn(0f, maxSpeed)

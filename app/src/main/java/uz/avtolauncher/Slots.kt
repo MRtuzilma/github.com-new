@@ -90,6 +90,9 @@ object Slots {
         }
     }
 
+    /** O'zimizning (bo'yaladigan) ikonkami? */
+    fun isBuiltin(key: String) = key == "" || key == APPS || key == SETTINGS
+
     /** Ilova o'rnatilmagan (o'chirilgan) bo'lsa false qaytaradi. */
     fun isValid(ctx: Context, key: String): Boolean = when (key) {
         "", APPS, SETTINGS -> true

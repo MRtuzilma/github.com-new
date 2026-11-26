@@ -2,12 +2,14 @@ package uz.avtolauncher
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -16,6 +18,7 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
@@ -32,6 +35,7 @@ import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.TextClock
 import android.widget.TextView
 import android.widget.Toast
 
@@ -40,16 +44,24 @@ class MainActivity : Activity() {
     private companion object {
         const val REQ_LOCATION = 1
         const val REQ_PICK = 2
+        const val REQ_WALLPAPER = 3
         const val GPS_TIMEOUT_MS = 5000L
+        const val THEME_CHECK_MS = 5 * 60 * 1000L
     }
 
     private lateinit var gauge: SpeedGaugeView
     private lateinit var gpsHint: TextView
     private lateinit var battery: TextView
+    private lateinit var weatherText: TextView
+    private lateinit var compassArrow: ImageView
+    private lateinit var compassText: TextView
     private lateinit var albumArt: ImageView
     private lateinit var trackTitle: TextView
     private lateinit var trackArtist: TextView
+    private lateinit var btnPrev: ImageButton
     private lateinit var btnPlay: ImageButton
+    private lateinit var btnNext: ImageButton
+    private lateinit var btnTheme: ImageButton
     private lateinit var mediaHint: TextView
     private lateinit var tilesBox: LinearLayout
 
@@ -57,6 +69,12 @@ class MainActivity : Activity() {
     private var locationManager: LocationManager? = null
     private var sessionManager: MediaSessionManager? = null
     private var controller: MediaController? = null
+    private var lastLocation: Location? = null
+    private var weatherLoading = false
+
+    private lateinit var pal: LauncherTheme.Palette
+    private var hasWallpaper = false
+    private var appliedDay: Boolean? = null
 
     // ---------------- Hayot sikli ----------------
 
@@ -68,16 +86,27 @@ class MainActivity : Activity() {
         gauge = findViewById(R.id.gauge)
         gpsHint = findViewById(R.id.gpsHint)
         battery = findViewById(R.id.battery)
+        weatherText = findViewById(R.id.weatherText)
+        compassArrow = findViewById(R.id.compassArrow)
+        compassText = findViewById(R.id.compassText)
         albumArt = findViewById(R.id.albumArt)
         trackTitle = findViewById(R.id.trackTitle)
         trackArtist = findViewById(R.id.trackArtist)
+        btnPrev = findViewById(R.id.btnPrev)
         btnPlay = findViewById(R.id.btnPlay)
+        btnNext = findViewById(R.id.btnNext)
+        btnTheme = findViewById(R.id.btnTheme)
         mediaHint = findViewById(R.id.mediaHint)
         tilesBox = findViewById(R.id.tiles)
 
-        findViewById<ImageButton>(R.id.btnPrev).setOnClickListener { mediaPrev() }
+        btnPrev.setOnClickListener { mediaPrev() }
         btnPlay.setOnClickListener { mediaPlayPause() }
-        findViewById<ImageButton>(R.id.btnNext).setOnClickListener { mediaNext() }
+        btnNext.setOnClickListener { mediaNext() }
+        btnTheme.setOnClickListener { showThemeMenu() }
+        findViewById<View>(R.id.clockPanel).setOnLongClickListener {
+            showThemeMenu()
+            true
+        }
         mediaHint.setOnClickListener {
             try {
                 startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -85,6 +114,10 @@ class MainActivity : Activity() {
                 Toast.makeText(this, R.string.cannot_open, Toast.LENGTH_SHORT).show()
             }
         }
+
+        applyTheme()
+        loadWallpaper()
+        Weather.cached(this)?.let { weatherText.text = Weather.describe(it) }
 
         if (!hasLocationPermission()) {
             requestPermissions(
@@ -103,12 +136,14 @@ class MainActivity : Activity() {
         } else {
             registerReceiver(batteryReceiver, filter)
         }
+        handler.post(themeCheck)
     }
 
     override fun onResume() {
         super.onResume()
         buildTiles()
         startMedia()
+        refreshWeatherIfNeeded()
     }
 
     override fun onPause() {
@@ -118,6 +153,7 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         stopGps()
+        handler.removeCallbacks(themeCheck)
         try {
             unregisterReceiver(batteryReceiver)
         } catch (e: IllegalArgumentException) {
@@ -152,11 +188,165 @@ class MainActivity : Activity() {
         }
     }
 
-    // ---------------- Ilova tugmalari ----------------
-
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
+    // ---------------- Tema va fon rasmi ----------------
+
+    /** "Avto" rejimda kun/tun almashganini tekshiradi. */
+    private val themeCheck = object : Runnable {
+        override fun run() {
+            if (appliedDay != LauncherTheme.isDay(this@MainActivity)) {
+                applyTheme()
+                buildTiles()
+            }
+            handler.postDelayed(this, THEME_CHECK_MS)
+        }
+    }
+
+    private fun applyTheme() {
+        pal = LauncherTheme.palette(this)
+        appliedDay = pal.isDay
+        val r24 = dp(24).toFloat()
+
+        findViewById<View>(R.id.root).setBackgroundColor(pal.bg)
+        window.statusBarColor = pal.bg
+        window.navigationBarColor = pal.bg
+        findViewById<View>(R.id.wallDim).visibility = if (hasWallpaper && !pal.isDay) View.VISIBLE else View.GONE
+
+        for (id in intArrayOf(R.id.gaugePanel, R.id.clockPanel, R.id.musicPanel)) {
+            findViewById<View>(id).background = LauncherTheme.panelBg(pal, r24, hasWallpaper)
+        }
+
+        gauge.setColors(pal.accent, pal.gaugeTrack, pal.text, pal.textDim)
+        gpsHint.setTextColor(pal.textDim)
+        findViewById<TextClock>(R.id.timeClock).setTextColor(pal.text)
+        findViewById<TextClock>(R.id.dateClock).setTextColor(pal.accent)
+        weatherText.setTextColor(pal.text)
+        compassText.setTextColor(pal.text)
+        compassArrow.imageTintList = LauncherTheme.tint(pal.accent)
+        battery.setTextColor(pal.textDim)
+        btnTheme.imageTintList = LauncherTheme.tint(pal.textDim)
+
+        trackTitle.setTextColor(pal.text)
+        trackArtist.setTextColor(pal.textDim)
+        mediaHint.setTextColor(pal.accent)
+        for (b in arrayOf(btnPrev, btnPlay, btnNext)) {
+            b.background = LauncherTheme.roundBtn(pal)
+            b.imageTintList = LauncherTheme.tint(pal.text)
+        }
+        albumArt.imageTintList = if (controller?.metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) == null)
+            LauncherTheme.tint(pal.text) else null
+    }
+
+    private fun showThemeMenu() {
+        val items = arrayOf(
+            "Rang: " + LauncherTheme.ACCENT_NAMES[LauncherTheme.accentIndex(this)],
+            "Rejim: " + LauncherTheme.MODE_NAMES[LauncherTheme.mode(this)],
+            "Fon rasmini tanlash",
+            "Fon rasmini olib tashlash"
+        )
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("Ko'rinish")
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> pickAccent()
+                    1 -> pickMode()
+                    2 -> pickWallpaper()
+                    3 -> {
+                        LauncherTheme.setWallpaper(this, null)
+                        loadWallpaper()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun pickAccent() {
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("Rang")
+            .setSingleChoiceItems(
+                LauncherTheme.ACCENT_NAMES.toTypedArray(),
+                LauncherTheme.accentIndex(this)
+            ) { d, which ->
+                LauncherTheme.setAccent(this, which)
+                applyTheme()
+                buildTiles()
+                d.dismiss()
+            }
+            .show()
+    }
+
+    private fun pickMode() {
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("Rejim")
+            .setSingleChoiceItems(LauncherTheme.MODE_NAMES.toTypedArray(), LauncherTheme.mode(this)) { d, which ->
+                LauncherTheme.setMode(this, which)
+                applyTheme()
+                buildTiles()
+                d.dismiss()
+            }
+            .show()
+    }
+
+    private fun pickWallpaper() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("image/*")
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(i, REQ_WALLPAPER)
+        } catch (e: Exception) {
+            Toast.makeText(this, R.string.cannot_open, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun loadWallpaper() {
+        val view = findViewById<ImageView>(R.id.wallpaper)
+        val uriStr = LauncherTheme.wallpaper(this)
+        if (uriStr == null) {
+            view.setImageDrawable(null)
+            view.visibility = View.GONE
+            hasWallpaper = false
+            applyTheme()
+            buildTiles()
+            return
+        }
+        Thread {
+            val bmp = decodeScaled(Uri.parse(uriStr))
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                if (bmp != null) {
+                    view.setImageBitmap(bmp)
+                    view.visibility = View.VISIBLE
+                    hasWallpaper = true
+                } else {
+                    view.visibility = View.GONE
+                    hasWallpaper = false
+                }
+                applyTheme()
+                buildTiles()
+            }
+        }.start()
+    }
+
+    /** Katta rasmni ekran o'lchamigacha kichraytirib o'qiydi (xotira tejaladi). */
+    private fun decodeScaled(uri: Uri): Bitmap? = try {
+        val dm = resources.displayMetrics
+        val target = maxOf(dm.widthPixels, dm.heightPixels)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= target) sample *= 2
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+    } catch (e: Exception) {
+        null
+    }
+
+    // ---------------- Ilova tugmalari ----------------
+
     private fun buildTiles() {
+        if (!::pal.isInitialized) return
         tilesBox.removeAllViews()
         for (row in 0 until 3) {
             val rowView = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -179,7 +369,7 @@ class MainActivity : Activity() {
         val tile = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundResource(R.drawable.tile_bg)
+            background = LauncherTheme.tileBg(pal, dp(22).toFloat(), hasWallpaper)
             setPadding(dp(8), dp(8), dp(8), dp(8))
             isClickable = true
             isFocusable = true
@@ -187,12 +377,12 @@ class MainActivity : Activity() {
         val icon = ImageView(this).apply {
             setImageDrawable(Slots.icon(this@MainActivity, key))
             scaleType = ImageView.ScaleType.FIT_CENTER
-            if (key.isEmpty()) alpha = 0.5f
+            if (Slots.isBuiltin(key)) imageTintList = LauncherTheme.tint(if (key.isEmpty()) pal.textDim else pal.accent)
         }
         tile.addView(icon, LinearLayout.LayoutParams(dp(60), dp(60)))
         val label = TextView(this).apply {
             text = Slots.label(this@MainActivity, key)
-            setTextColor(getColor(if (key.isEmpty()) R.color.text_dim else R.color.text))
+            setTextColor(if (key.isEmpty()) pal.textDim else pal.text)
             textSize = 15f
             gravity = Gravity.CENTER
             maxLines = 1
@@ -222,33 +412,56 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_PICK && resultCode == RESULT_OK && data != null) {
-            val slot = data.getIntExtra(AppDrawerActivity.EXTRA_SLOT, -1)
-            val key = data.getStringExtra(AppDrawerActivity.EXTRA_KEY) ?: return
-            if (slot in 0 until Slots.COUNT) {
-                Slots.set(this, slot, key)
-                buildTiles()
+        if (resultCode != RESULT_OK || data == null) return
+        when (requestCode) {
+            REQ_PICK -> {
+                val slot = data.getIntExtra(AppDrawerActivity.EXTRA_SLOT, -1)
+                val key = data.getStringExtra(AppDrawerActivity.EXTRA_KEY) ?: return
+                if (slot in 0 until Slots.COUNT) {
+                    Slots.set(this, slot, key)
+                    buildTiles()
+                }
+            }
+            REQ_WALLPAPER -> {
+                val uri = data.data ?: return
+                try {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (e: SecurityException) {
+                }
+                LauncherTheme.setWallpaper(this, uri.toString())
+                loadWallpaper()
             }
         }
     }
 
-    // ---------------- GPS spidometr ----------------
+    // ---------------- GPS: spidometr va kompas ----------------
 
     private fun hasLocationPermission() =
         checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_LOCATION) startGps()
+        if (requestCode == REQ_LOCATION) {
+            startGps()
+            refreshWeatherIfNeeded()
+        }
     }
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
+            val firstFix = lastLocation == null
+            lastLocation = location
             val kmh = if (location.hasSpeed()) location.speed * 3.6f else 0f
             gauge.setSpeed(if (kmh < 2f) 0f else kmh) // to'xtab turganda sakrab turmasin
+            // Yo'nalish faqat harakatda ishonchli
+            if (location.hasBearing() && kmh >= 5f) {
+                compassArrow.rotation = location.bearing
+                compassText.text = Weather.direction(location.bearing)
+            }
             gpsHint.visibility = View.GONE
             handler.removeCallbacks(gpsTimeout)
             handler.postDelayed(gpsTimeout, GPS_TIMEOUT_MS)
+            if (firstFix) refreshWeatherIfNeeded()
         }
 
         override fun onProviderEnabled(provider: String) {}
@@ -300,6 +513,35 @@ class MainActivity : Activity() {
         }
     }
 
+    // ---------------- Ob-havo ----------------
+
+    private fun bestKnownLocation(): Location? {
+        lastLocation?.let { return it }
+        if (!hasLocationPermission()) return null
+        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        return try {
+            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+                .filter { lm.allProviders.contains(it) }
+                .mapNotNull { lm.getLastKnownLocation(it) }
+                .maxByOrNull { it.time }
+        } catch (e: SecurityException) {
+            null
+        }
+    }
+
+    private fun refreshWeatherIfNeeded() {
+        if (weatherLoading || !Weather.needsRefresh(this)) return
+        val loc = bestKnownLocation() ?: return
+        weatherLoading = true
+        Thread {
+            val now = Weather.fetch(applicationContext, loc.latitude, loc.longitude)
+            runOnUiThread {
+                weatherLoading = false
+                if (now != null && !isDestroyed) weatherText.text = Weather.describe(now)
+            }
+        }.start()
+    }
+
     // ---------------- Batareya ----------------
 
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -311,7 +553,7 @@ class MainActivity : Activity() {
             val pct = level * 100 / scale
             val charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
                     status == BatteryManager.BATTERY_STATUS_FULL
-            battery.text = if (charging) "⚡ Batareya $pct%" else "Batareya $pct%"
+            battery.text = if (charging) "⚡ $pct%" else "🔋 $pct%"
         }
     }
 
@@ -382,11 +624,13 @@ class MainActivity : Activity() {
             ?: m?.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
         if (art != null) {
             albumArt.setPadding(0, 0, 0, 0)
+            albumArt.imageTintList = null
             albumArt.setImageBitmap(art)
         } else {
             val p = dp(24)
             albumArt.setPadding(p, p, p, p)
             albumArt.setImageResource(R.drawable.ic_music)
+            if (::pal.isInitialized) albumArt.imageTintList = LauncherTheme.tint(pal.text)
         }
     }
 

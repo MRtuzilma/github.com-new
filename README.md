@@ -4,7 +4,8 @@ Android planshet uchun mashina bosh ekrani (launcher). Qorong'i dizayn, landshaf
 
 ## Nimalar bor
 - **Spidometr**: GPS bo'yicha tezlik (km/soat), 90 dan oshsa sariq, 120 dan oshsa qizil rangga o'tadi.
-- **Soat, sana va batareya**.
+- **Soat, sana, batareya, ob-havo** (Open-Meteo, internet kerak) va **kompas** (harakat yo'nalishi).
+- **Ko'rinish** (soat panelidagi 🎨 tugma): 6 xil rang, tungi / kunduzgi / avto rejim, o'z fon rasmingiz.
 - **Musiqa paneli**: qo'shiq nomi, ijrochi, muqova, ⏮ ⏯ ⏭ tugmalari. Yandex Music, Spotify, YouTube Music va boshqalar bilan ishlaydi.
 - **6 ta katta tugma**: navigator, musiqa, BT Ekran, Telegram, barcha ilovalar, sozlamalar.
   Tugmani **bosib tursangiz**, unga boshqa ilova biriktirasiz.
