@@ -29,4 +29,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk AvtoLauncher.apk
-          gh release create "v1.4.${{ github.run_number }}" AvtoLauncher.apk --title "Avto Launcher v1.4.${{ github.run_number }}" --notes "Planshetga o'rnatish uchun AvtoLauncher.apk faylini yuklab oling." --latest
+          gh release create "v1.5.${{ github.run_number }}" AvtoLauncher.apk --title "Avto Launcher v1.5.${{ github.run_number }}" --notes "Planshetga o'rnatish uchun AvtoLauncher.apk faylini yuklab oling." --latest

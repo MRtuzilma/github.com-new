@@ -6,7 +6,7 @@ Android planshet uchun mashina bosh ekrani (launcher). Qorong'i dizayn, landshaf
 - **Spidometr**: GPS bo'yicha tezlik (km/soat), 90 dan oshsa sariq, 120 dan oshsa qizil rangga o'tadi.
 - **Soat, sana, batareya, ob-havo** (Open-Meteo, internet kerak) va **kompas** (harakat yo'nalishi).
 - **Ko'rinish** (soat panelidagi 🎨 tugma): 6 xil rang, tungi / kunduzgi / avto rejim, o'z fon rasmingiz.
-- **Musiqa paneli**: qo'shiq nomi, ijrochi, muqova, ⏮ ⏯ ⏭ tugmalari. Yandex Music, Spotify, YouTube Music va boshqalar bilan ishlaydi.
+- **Musiqa paneli**: ⏮ ⏯ ⏭ tugmalari oxirgi ishlatilgan musiqa ilovasini boshqaradi (maxsus ruxsat kerak emas).
 - **6 ta katta tugma**: navigator, musiqa, BT Ekran, Telegram, barcha ilovalar, sozlamalar.
   Tugmani **bosib tursangiz**, unga boshqa ilova biriktirasiz.
 - **Navigator + panel** (soat panelidagi chap yuqori tugma): ekran ikkiga bo'linadi — bir tomonda Yandex Navigator, ikkinchisida ixcham panel (spidometr, soat, ob-havo, musiqa). Android 12L+ da avtomatik, eskilarida qo'lda (ko'rsatma chiqadi).
@@ -28,6 +28,5 @@ Android planshet uchun mashina bosh ekrani (launcher). Qorong'i dizayn, landshaf
 ## Planshetda sozlash
 1. APK'ni o'rnating va oching.
 2. Joylashuvga ruxsat bering (spidometr uchun).
-3. Musiqa panelidagi yozuvga bosing → ro'yxatdan **Avto Launcher**'ni yoqing (qo'shiq nomi chiqishi uchun).
 4. Uy tugmasini bosing → **Avto Launcher** → **Har doim** tanlang.
    Yoki: Sozlamalar → Ilovalar → Standart ilovalar → Bosh ekran → Avto Launcher.

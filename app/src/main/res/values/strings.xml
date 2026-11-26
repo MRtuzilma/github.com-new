@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Avto Launcher</string>
     <string name="kmh">km/soat</string>
-    <string name="no_music">Musiqa chalinmayapti</string>
+    <string name="no_music">Musiqa</string>
     <string name="media_permission">Qo\'shiq nomini ko\'rsatish uchun shu yerga bosib ruxsat bering</string>
     <string name="gps_wait">GPS signal kutilmoqda…</string>
     <string name="gps_off">Joylashuvga ruxsat berilmagan</string>

@@ -566,30 +566,16 @@ abstract class BaseDashActivity : Activity() {
         override fun onSessionDestroyed() = setController(null)
     }
 
+    // Eslatma: qo'shiq nomini o'qish uchun "bildirishnomalarga ruxsat" kerak bo'ladi,
+    // lekin Google Play Protect bunday ilovalarni brauzer/Telegram'dan o'rnatishga qo'ymaydi.
+    // Shuning uchun musiqa faqat tugmalar orqali boshqariladi (ruxsat talab qilinmaydi).
+    private var localPlaying = false
+
     private fun startMedia() {
-        if (!MediaListener.isEnabled(this)) {
-            mediaHint.visibility = View.VISIBLE
-            return
-        }
         mediaHint.visibility = View.GONE
-        val sm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
-        sessionManager = sm
-        try {
-            val comp = MediaListener.component(this)
-            sm.addOnActiveSessionsChangedListener(sessionsListener, comp)
-            pickController(sm.getActiveSessions(comp))
-        } catch (e: SecurityException) {
-            mediaHint.visibility = View.VISIBLE
-        }
     }
 
-    private fun stopMedia() {
-        try {
-            sessionManager?.removeOnActiveSessionsChangedListener(sessionsListener)
-        } catch (e: Exception) {
-        }
-        setController(null)
-    }
+    private fun stopMedia() {}
 
     private fun pickController(list: List<MediaController>?) {
         val playing = list?.firstOrNull { it.playbackState?.state == PlaybackState.STATE_PLAYING }
@@ -643,6 +629,8 @@ abstract class BaseDashActivity : Activity() {
             else c.transportControls.play()
         } else {
             sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            localPlaying = !localPlaying
+            btnPlay.setImageResource(if (localPlaying) R.drawable.ic_pause else R.drawable.ic_play)
         }
     }
 
