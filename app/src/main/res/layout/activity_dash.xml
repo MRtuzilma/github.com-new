@@ -142,10 +142,13 @@
                         android:layout_height="match_parent"
                         android:layout_weight="1">
 
+                        <!-- Ichki tarkib: joy yetmasa kod uni proporsional kichraytiradi -->
                         <LinearLayout
-                            android:layout_width="match_parent"
-                            android:layout_height="match_parent"
-                            android:gravity="center"
+                            android:id="@+id/clockInner"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_gravity="center"
+                            android:gravity="center_horizontal"
                             android:orientation="vertical">
 
                             <TextClock
@@ -156,7 +159,7 @@
                                 android:format12Hour="HH:mm"
                                 android:format24Hour="HH:mm"
                                 android:includeFontPadding="false"
-                                android:textSize="58sp" />
+                                android:textSize="54sp" />
 
                             <TextClock
                                 android:id="@+id/dateClock"
@@ -167,37 +170,6 @@
                                 android:format24Hour="EEEE, d MMMM"
                                 android:letterSpacing="0.04"
                                 android:maxLines="1"
-                                android:textSize="14sp" />
-
-                            <LinearLayout
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:layout_marginTop="10dp"
-                                android:gravity="center_vertical"
-                                android:orientation="horizontal">
-
-                                <TextView
-                                    android:id="@+id/weatherIcon"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:text="🌡"
-                                    android:textSize="28sp" />
-
-                                <TextView
-                                    android:id="@+id/weatherTemp"
-                                    android:layout_width="wrap_content"
-                                    android:layout_height="wrap_content"
-                                    android:layout_marginStart="6dp"
-                                    android:fontFamily="sans-serif-light"
-                                    android:text="—"
-                                    android:textSize="30sp" />
-                            </LinearLayout>
-
-                            <TextView
-                                android:id="@+id/weatherDesc"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:maxLines="1"
                                 android:textSize="13sp" />
 
                             <LinearLayout
@@ -207,15 +179,47 @@
                                 android:gravity="center_vertical"
                                 android:orientation="horizontal">
 
+                                <TextView
+                                    android:id="@+id/weatherIcon"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="🌡"
+                                    android:textSize="22sp" />
+
+                                <TextView
+                                    android:id="@+id/weatherTemp"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="4dp"
+                                    android:fontFamily="sans-serif-light"
+                                    android:text="—"
+                                    android:textSize="24sp" />
+
+                                <TextView
+                                    android:id="@+id/weatherDesc"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:layout_marginStart="6dp"
+                                    android:maxLines="1"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
+
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="6dp"
+                                android:gravity="center_vertical"
+                                android:orientation="horizontal">
+
                                 <FrameLayout
                                     android:id="@+id/compassWell"
-                                    android:layout_width="40dp"
-                                    android:layout_height="40dp">
+                                    android:layout_width="34dp"
+                                    android:layout_height="34dp">
 
                                     <ImageView
                                         android:id="@+id/compassArrow"
-                                        android:layout_width="18dp"
-                                        android:layout_height="18dp"
+                                        android:layout_width="15dp"
+                                        android:layout_height="15dp"
                                         android:layout_gravity="center"
                                         android:importantForAccessibility="no"
                                         android:src="@drawable/ic_navigation" />
@@ -228,16 +232,35 @@
                                     android:layout_marginStart="6dp"
                                     android:maxLines="1"
                                     android:text="—"
-                                    android:textSize="14sp" />
+                                    android:textSize="13sp" />
                             </LinearLayout>
 
-                            <TextView
-                                android:id="@+id/statusText"
+                            <!-- Batareya va ovoz: ikkita kichik "chuqurcha" -->
+                            <LinearLayout
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="6dp"
-                                android:maxLines="1"
-                                android:textSize="12sp" />
+                                android:orientation="horizontal">
+
+                                <TextView
+                                    android:id="@+id/batteryChip"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="30dp"
+                                    android:gravity="center"
+                                    android:maxLines="1"
+                                    android:text="🔋 —"
+                                    android:textSize="12sp" />
+
+                                <TextView
+                                    android:id="@+id/statusText"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="30dp"
+                                    android:layout_marginStart="6dp"
+                                    android:gravity="center"
+                                    android:maxLines="1"
+                                    android:text="🔊 —"
+                                    android:textSize="12sp" />
+                            </LinearLayout>
                         </LinearLayout>
 
                         <ImageButton
