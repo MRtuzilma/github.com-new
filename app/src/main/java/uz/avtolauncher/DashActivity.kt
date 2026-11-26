@@ -157,8 +157,9 @@ class DashActivity : Activity() {
         // Spidometrga bosilsa — safar rejimi (katta tezlik + statistika); yana bosilsa — qaytadi
         gauge.setOnClickListener { setTripMode(true) }
         gaugeBig.setOnClickListener { setTripMode(false) }
-        btnBt.setOnClickListener { startActivity(Intent(this, BtActivity::class.java)) }
-        btnBtTrip.setOnClickListener { startActivity(Intent(this, BtActivity::class.java)) }
+        // BT funksiyasi keyinroq qo'shiladi — hozircha faqat tugma
+        btnBt.setOnClickListener { btSoon() }
+        btnBtTrip.setOnClickListener { btSoon() }
 
         btnPrev.setOnClickListener { sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS) }
         btnNext.setOnClickListener { sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT) }
@@ -199,12 +200,6 @@ class DashActivity : Activity() {
         else registerReceiver(batteryReceiver, filter)
         handler.post(themeCheck)
         web.onResume()
-        val bf = IntentFilter().apply {
-            addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED)
-            addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED)
-        }
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(btStateReceiver, bf, Context.RECEIVER_EXPORTED)
-        else registerReceiver(btStateReceiver, bf)
         handler.post(statsTick)
     }
 
@@ -213,7 +208,6 @@ class DashActivity : Activity() {
         buildDock()
         refreshWeatherIfNeeded()
         updateStatus()
-        updateKeepScreenOn()
         updateTripStats()
         if (waitingForSplit && !inMultiWindow) {
             // Navigator yoniga emas, butun ekranga ochildi — keyingi safar avtomatik urinmaymiz
@@ -228,10 +222,6 @@ class DashActivity : Activity() {
         handler.removeCallbacks(themeCheck)
         try {
             unregisterReceiver(batteryReceiver)
-        } catch (e: IllegalArgumentException) {
-        }
-        try {
-            unregisterReceiver(btStateReceiver)
         } catch (e: IllegalArgumentException) {
         }
         handler.removeCallbacks(statsTick)
@@ -674,23 +664,8 @@ class DashActivity : Activity() {
         statViews["total"]?.text = valueText(kmNumber(st.totalKm), "km")
     }
 
-    // =================== BT: ekran yoniq turishi ===================
-
-    private val btStateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            // Asosiy ishni BtReceiver qiladi; bu yerda faqat ekran holati va statistikani yangilaymiz
-            root.postDelayed({
-                updateKeepScreenOn()
-                updateTripStats()
-            }, 500)
-        }
-    }
-
-    /** BT Ekran: mashina Bluetooth'iga ulangan bo'lsa — ekran o'chmaydi. */
-    private fun updateKeepScreenOn() {
-        val on = !BtCore.keepOn(this) || BtCore.isConnected(this)
-        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    private fun btSoon() {
+        Toast.makeText(this, "BT funksiyasi keyingi versiyada qo'shiladi", Toast.LENGTH_SHORT).show()
     }
 
     // =================== Birinchi sozlash ===================
@@ -701,31 +676,7 @@ class DashActivity : Activity() {
             need.add(Manifest.permission.ACCESS_FINE_LOCATION)
             need.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
-        if (Build.VERSION.SDK_INT >= 31 &&
-            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
-        ) need.add(Manifest.permission.BLUETOOTH_CONNECT)
         if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), REQ_LOCATION)
-        else askAdminOnce()
-    }
-
-    /** Administrator ruxsati (BT uzilganda ekranni qulflash uchun) — launcher sozlanayotganda bir marta so'raladi. */
-    private fun askAdminOnce() {
-        if (BtCore.isAdmin(this) || prefs().getBoolean("admin_asked", false)) return
-        prefs().edit().putBoolean("admin_asked", true).apply()
-        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-            .setTitle("Administrator ruxsati")
-            .setMessage(
-                "Mashina Bluetooth'i uzilganda ekran avtomatik o'chib qulflanishi uchun launcherga administrator ruxsati kerak.\n\n" +
-                        "Keyingi oynada «Faollashtirish» (Activate) tugmasini bosing."
-            )
-            .setPositiveButton("Davom etish") { _, _ ->
-                try {
-                    startActivity(BtCore.adminIntent(this))
-                } catch (e: Exception) {
-                }
-            }
-            .setNegativeButton("Keyinroq", null)
-            .show()
     }
 
     // =================== YouTube ===================
@@ -862,7 +813,6 @@ class DashActivity : Activity() {
         if (requestCode == REQ_LOCATION) {
             startGps()
             refreshWeatherIfNeeded()
-            askAdminOnce()
         }
     }
 

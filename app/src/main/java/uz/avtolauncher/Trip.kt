@@ -5,7 +5,7 @@ import android.location.Location
 
 /**
  * Yo'l statistikasi: umumiy probeg (ilova o'rnatilgandan beri), joriy safar
- * (mashina yonib, Bluetooth ulangandan beri), o'rtacha va eng yuqori tezlik, yo'ldagi vaqt.
+ * (mashina 30 daqiqadan ko'p turgandan keyin yangi safar boshlanadi), o'rtacha va eng yuqori tezlik, yo'ldagi vaqt.
  * Masofa GPS nuqtalari orasidagi masofa yig'indisi sifatida hisoblanadi.
  */
 object Trip {
@@ -60,6 +60,11 @@ object Trip {
     fun tripStart(ctx: Context) = prefs(ctx).getLong("trip_start", 0L)
 
     fun onLocation(ctx: Context, loc: Location) {
+        // Mashina 30 daqiqadan ko'p turgan bo'lsa (o'chirilgan) — yangi safar boshlanadi
+        val p0 = prefs(ctx)
+        val lastFix = p0.getLong("last_fix", 0L)
+        if (lastFix > 0 && System.currentTimeMillis() - lastFix > 30 * 60 * 1000L) reset(ctx)
+        p0.edit().putLong("last_fix", System.currentTimeMillis()).apply()
         val prev = last
         val kmh = if (loc.hasSpeed()) loc.speed * 3.6f else 0f
         if (loc.hasAccuracy() && loc.accuracy > MAX_ACCURACY_M) return
