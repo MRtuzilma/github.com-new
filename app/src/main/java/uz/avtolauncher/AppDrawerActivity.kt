@@ -63,7 +63,8 @@ class AppDrawerActivity : Activity() {
                 listOf(
                     Entry(getString(R.string.empty_slot), "", getDrawable(R.drawable.ic_add)),
                     Entry(getString(R.string.all_apps), Slots.APPS, getDrawable(R.drawable.ic_apps)),
-                    Entry(getString(R.string.settings), Slots.SETTINGS, getDrawable(R.drawable.ic_settings))
+                    Entry(getString(R.string.settings), Slots.SETTINGS, getDrawable(R.drawable.ic_settings)),
+                    Entry(getString(R.string.split_nav), Slots.SPLIT, getDrawable(R.drawable.ic_split))
                 ) + apps
             } else apps
             runOnUiThread {

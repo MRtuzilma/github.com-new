@@ -13,4 +13,8 @@
     <string name="add_app">Ilova qo\'shish</string>
     <string name="hint_long_press">Tugmani almashtirish uchun uni bosib turing</string>
     <string name="cannot_open">Ilovani ochib bo\'lmadi</string>
+    <string name="split_nav">Navigator + panel</string>
+    <string name="full_screen">To\'liq ekran</string>
+    <string name="dash_name">Avto panel</string>
+    <string name="no_navigator">Navigator topilmadi. Yandex Navigator\'ni o\'rnating yoki 1-tugmaga navigator qo\'ying.</string>
 </resources>

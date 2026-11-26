@@ -45,6 +45,16 @@
             android:exported="false"
             android:screenOrientation="sensorLandscape" />
 
+        <!-- Navigator yonida turadigan ixcham panel (ekranni bo'lish rejimi) -->
+        <activity
+            android:name=".DashActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard"
+            android:exported="false"
+            android:label="@string/dash_name"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:taskAffinity="uz.avtolauncher.dash" />
+
         <!-- Qaysi qo'shiq chalayotganini ko'rsatish uchun -->
         <service
             android:name=".MediaListener"

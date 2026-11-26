@@ -9,6 +9,7 @@ Android planshet uchun mashina bosh ekrani (launcher). Qorong'i dizayn, landshaf
 - **Musiqa paneli**: qo'shiq nomi, ijrochi, muqova, ⏮ ⏯ ⏭ tugmalari. Yandex Music, Spotify, YouTube Music va boshqalar bilan ishlaydi.
 - **6 ta katta tugma**: navigator, musiqa, BT Ekran, Telegram, barcha ilovalar, sozlamalar.
   Tugmani **bosib tursangiz**, unga boshqa ilova biriktirasiz.
+- **Navigator + panel** (soat panelidagi chap yuqori tugma): ekran ikkiga bo'linadi — bir tomonda Yandex Navigator, ikkinchisida ixcham panel (spidometr, soat, ob-havo, musiqa). Android 12L+ da avtomatik, eskilarida qo'lda (ko'rsatma chiqadi).
 - Ekran o'chmaydi, orqaga tugmasi launcherni yopmaydi.
 
 ## APK yig'ish

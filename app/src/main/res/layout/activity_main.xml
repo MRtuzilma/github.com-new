@@ -140,6 +140,18 @@
                     android:padding="10dp"
                     android:scaleType="fitCenter"
                     android:src="@drawable/ic_palette" />
+
+                <ImageButton
+                    android:id="@+id/btnSplit"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_gravity="top|start"
+                    android:layout_margin="6dp"
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@string/split_nav"
+                    android:padding="10dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_split" />
             </FrameLayout>
 
             <LinearLayout
