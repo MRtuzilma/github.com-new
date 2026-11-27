@@ -84,6 +84,21 @@
             android:exported="false"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
+        <!-- Mashinadagi 📞 tugmasi (qo'ng'iroq yo'q paytda) — YouTube'ni kattalashtirish/qaytarish -->
+        <activity
+            android:name=".CarKeyActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="Avto Launcher: YouTube ekrani"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".BgPlayService"
             android:exported="false"

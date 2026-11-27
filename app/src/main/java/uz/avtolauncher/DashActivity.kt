@@ -117,6 +117,19 @@ class DashActivity : Activity() {
                 '.ytp-endscreen-content, .html5-endscreen, .videowall-endscreen, .ytp-ce-element,' +
                 '.ytp-cards-teaser, .ytp-pause-overlay, .ytp-suggestion-set, ytm-endscreen-element-renderer' +
                 '{ display: none !important; visibility: hidden !important; pointer-events: none !important; }' +
+                /* html.avto-clip — faqat video klip: pleyer butun oynani egallaydi, sahifaning qolgani ko'rinmaydi */
+                'html.avto-clip body { overflow: hidden !important; }' +
+                'html.avto-clip #player-container-id, html.avto-clip .player-container, html.avto-clip ytm-player,' +
+                'html.avto-clip #player-container-outer, html.avto-clip #player' +
+                '{ position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;' +
+                '  width: 100vw !important; height: 100vh !important; max-height: none !important; margin: 0 !important;' +
+                '  padding: 0 !important; z-index: 2147483000 !important; background: #000 !important; transform: none !important; }' +
+                'html.avto-clip #movie_player, html.avto-clip .html5-video-player, html.avto-clip .html5-video-container' +
+                '{ width: 100% !important; height: 100% !important; }' +
+                'html.avto-clip video { width: 100% !important; height: 100% !important; left: 0 !important; top: 0 !important;' +
+                '  object-fit: contain !important; }' +
+                'html.avto-clip ytm-mobile-topbar-renderer, html.avto-clip header.mobile-topbar-header,' +
+                'html.avto-clip ytm-pivot-bar-renderer { display: none !important; }' +
                 /* Yuqori panel yashirilganda (html.avto-hide) — faqat video ko'rinadi */
                 'html.avto-hide ytm-mobile-topbar-renderer, html.avto-hide header.mobile-topbar-header' +
                 '{ display: none !important; }' +
@@ -366,6 +379,7 @@ class DashActivity : Activity() {
         videoClip = findViewById(R.id.videoClip)
         web = findViewById(R.id.web)
         watchSystemBars()
+        MainActivity.carKey = { runOnUiThread { carKeyToggle() } }
         (web as? BgWebView)?.keepAlive = { bgPlayEnabled() && ytPlaying }
         fullHolder = findViewById(R.id.fullHolder)
         infoSwipe = findViewById(R.id.infoSwipe)
@@ -568,6 +582,7 @@ class DashActivity : Activity() {
         if (webAway) FullVideoActivity.Link.close()
         BgPlayService.control = null
         BgPlayService.stop(this)
+        MainActivity.carKey = null
         try {
             session?.release()
         } catch (e: Exception) {
@@ -640,13 +655,13 @@ class DashActivity : Activity() {
                 it.hide(WindowInsets.Type.systemBars())
                 it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
         }
+        // Eski usul ham — ba'zi mashina planshetlari faqat shunga quloq soladi
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE)
     }
 
     // =================== Joylashuv (keng / tor oyna) ===================
@@ -1673,6 +1688,7 @@ class DashActivity : Activity() {
                 setExpanded(false)
                 expandStage = 0
                 syncYtFs(false)
+                setClip(false)
                 web.onResume()
                 if (playing || ytPlaying) keepPlaying()
             }
@@ -1748,10 +1764,24 @@ class DashActivity : Activity() {
                 setExpanded(true)
                 expandStage = 1
                 syncYtFs(false)
+                setClip(true) // o'z oynasida faqat video klip
             }
             1 -> enterFull()
             else -> backToNormal()
         }
+    }
+
+    /** Faqat video klipni ko'rsatish (YouTube sahifasining qolgan qismi yashiriladi). */
+    private fun setClip(on: Boolean) {
+        web.evaluateJavascript(
+            if (on) "document.documentElement.classList.add('avto-clip');"
+            else "document.documentElement.classList.remove('avto-clip');", null
+        )
+    }
+
+    /** Mashinadagi 📞 tugmasi: YouTube butun ekranga ↔ joyiga. */
+    private fun carKeyToggle() {
+        if (expandStage == 0 && !webAway) enterFull() else backToNormal()
     }
 
     /** YouTube pleyeriga launcher holatini bildiradi (to'liq ekranda emasmi yoki ekanmi). */
@@ -1769,6 +1799,7 @@ class DashActivity : Activity() {
             setExpanded(false)
             expandStage = 0
             syncYtFs(false)
+            setClip(false)
         }
     }
 
@@ -1983,6 +2014,15 @@ class DashActivity : Activity() {
                 override fun onPlay() = ytPlay()
                 override fun onPause() = ytPause()
                 override fun onStop() = ytPause()
+                override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
+                    @Suppress("DEPRECATION")
+                    val ev = mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    if (ev != null && ev.keyCode == KeyEvent.KEYCODE_CALL) {
+                        if (ev.action == KeyEvent.ACTION_UP) carKeyToggle()
+                        return true
+                    }
+                    return super.onMediaButtonEvent(mediaButtonIntent)
+                }
                 override fun onSkipToNext() {
                     lastSource = "yt"
                     web.evaluateJavascript(YT_NEXT_JS, null)
@@ -2102,6 +2142,7 @@ class DashActivity : Activity() {
                 view.evaluateJavascript(KEEP_VISIBLE_JS, null)
                 view.evaluateJavascript(YT_CSS_JS, null)
                 view.evaluateJavascript(YT_UPNEXT_JS, null)
+                if (expandStage >= 1 || webAway) setClip(true)
                 handler.removeCallbacks(hideVideoChrome)
                 handler.postDelayed(hideVideoChrome, 4000)
             }

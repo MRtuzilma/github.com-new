@@ -15,6 +15,9 @@ class MainActivity : Activity() {
 
     companion object {
         const val EXTRA_FULL_VIDEO = "full_video"
+
+        /** Mashinadagi "qo'ng'iroqni qabul qilish" tugmasi (qo'ng'iroq yo'q paytda) — DashActivity shu yerda tinglaydi. */
+        var carKey: (() -> Unit)? = null
     }
 
     private var openFullVideo = false

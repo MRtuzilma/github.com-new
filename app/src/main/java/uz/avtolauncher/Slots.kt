@@ -168,6 +168,13 @@ object Slots {
             )
             for (i in tries) {
                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // O'zimizni (mashina tugmasi uchun ushlagichni) chetlab o'tamiz
+                val other = try {
+                    ctx.packageManager.queryIntentActivities(i, 0).firstOrNull { it.activityInfo.packageName != ctx.packageName }
+                } catch (e: Exception) {
+                    null
+                } ?: continue
+                i.setClassName(other.activityInfo.packageName, other.activityInfo.name)
                 try {
                     ctx.startActivity(i)
                     return

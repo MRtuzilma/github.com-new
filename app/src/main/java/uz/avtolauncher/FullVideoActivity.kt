@@ -53,7 +53,7 @@ class FullVideoActivity : Activity() {
             return
         }
         Link.current = this
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_FULLSCREEN)
         if (Build.VERSION.SDK_INT >= 28) {
             window.attributes = window.attributes.apply {
                 layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -85,7 +85,26 @@ class FullVideoActivity : Activity() {
         })
         setContentView(root)
         web.onResume()
+        // Video faqat o'zi ko'rinsin (YouTube sahifasining boshqa qismlari yashiriladi)
+        web.evaluateJavascript("document.documentElement.classList.add('avto-clip');", null)
         showClose()
+        hideBars()
+        // Holat qatori / pastki panel chiqib qolsa — 2 soniyadan keyin yana yashiramiz
+        @Suppress("DEPRECATION")
+        window.decorView.setOnSystemUiVisibilityChangeListener { vis ->
+            if (vis and View.SYSTEM_UI_FLAG_HIDE_NAVIGATION == 0 || vis and View.SYSTEM_UI_FLAG_FULLSCREEN == 0) {
+                handler.removeCallbacks(reHide)
+                handler.postDelayed(reHide, 2000)
+            }
+        }
+    }
+
+    private val reHide = Runnable { if (!closed) hideBars() }
+
+    override fun onResume() {
+        super.onResume()
+        hideBars()
+        handler.postDelayed(reHide, 400)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -101,7 +120,9 @@ class FullVideoActivity : Activity() {
                 it.hide(WindowInsets.Type.systemBars())
                 it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
-        } else {
+        }
+        // Eski usul ham — ba'zi mashina planshetlari faqat shunga quloq soladi
+        run {
             @Suppress("DEPRECATION")
             window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN
                     or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
@@ -148,11 +169,7 @@ class FullVideoActivity : Activity() {
         return super.dispatchKeyEvent(event)
     }
 
-    /** "Bosh ekran" yoki "So'nggi ilovalar" tugmasi bosildi — X kabi kichik oynaga qaytamiz. */
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        closeFull()
-    }
+
 
     override fun onDestroy() {
         // Tizim oynani o'zi yopib yuborsa ham video launcherga qaytsin
