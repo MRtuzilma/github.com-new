@@ -70,7 +70,7 @@ class DashActivity : Activity() {
         """
 
         /** Keyingi video: pleyerdagi "keyingi" tugmasi, bo'lmasa tavsiyalar ro'yxatidagi birinchi video. */
-        private const val YT_NEXT_JS = """
+        const val YT_NEXT_JS = """
             (function(){
               var sel = ['.player-controls-next-button','button[aria-label*="Next"]','button[aria-label*="next"]',
                          'button[aria-label*="Следующ"]','button[aria-label*="Keyingi"]'];
@@ -86,7 +86,7 @@ class DashActivity : Activity() {
         """
 
         /** Oldingi: video boshidan 5 soniyadan ko'p o'tgan bo'lsa — boshiga, aks holda oldingi videoga. */
-        private const val YT_PREV_JS = """
+        const val YT_PREV_JS = """
             (function(){
               var v = document.querySelector('video');
               if (v && v.currentTime > 5) { v.currentTime = 0; return 'restart'; }
@@ -192,9 +192,9 @@ class DashActivity : Activity() {
             })()
         """
 
-        private const val YT_PLAY_JS =
+        const val YT_PLAY_JS =
             "(function(){var v=document.querySelector('video');if(v){window.__avtoWant=true;v.play().catch(function(){});}})()"
-        private const val YT_PAUSE_JS =
+        const val YT_PAUSE_JS =
             "(function(){window.__avtoWant=false;var v=document.querySelector('video');if(v)v.pause();})()"
 
         private const val YT_SHOW_BAR_JS = "document.documentElement.classList.remove('avto-hide');"
@@ -399,6 +399,11 @@ class DashActivity : Activity() {
         watchSystemBars()
         MainActivity.carKey = { runOnUiThread { carKeyToggle() } }
         (web as? BgWebView)?.keepAlive = { bgPlayEnabled() && ytPlaying }
+        dashControls = VideoControls(this, { web }, YT_PREV_JS, YT_NEXT_JS, YT_PLAY_JS, YT_PAUSE_JS).also {
+            it.visibility = View.GONE
+            it.onShown = { shown -> if (shown) showVideoButtons() }
+            videoClip.addView(it, VideoControls.lp())
+        }
         fullHolder = findViewById(R.id.fullHolder)
         infoSwipe = findViewById(R.id.infoSwipe)
         topRow = findViewById(R.id.topRow)
@@ -707,6 +712,7 @@ class DashActivity : Activity() {
     // =================== Katta soat (Orqaga tugmasi) ===================
 
     private var clockOverlay: FrameLayout? = null
+    private var dashControls: VideoControls? = null
     private var clockWindow: FrameLayout? = null
 
     private fun showClockOverlay() {
@@ -2014,6 +2020,7 @@ class DashActivity : Activity() {
                 expandStage = 0
                 syncYtFs(false)
                 setClip(false)
+                dashControls?.setActive(false)
                 web.onResume()
                 wakeVideoSurface()
                 if (playing || ytPlaying) keepPlaying()
@@ -2095,6 +2102,7 @@ class DashActivity : Activity() {
                 expandStage = 1
                 syncYtFs(false)
                 setClip(true) // o'z oynasida faqat video klip
+                dashControls?.setActive(true)
                 withPlayingState { if (it) keepPlaying() }
             }
             1 -> enterFull()
@@ -2207,6 +2215,7 @@ class DashActivity : Activity() {
             expandStage = 0
             syncYtFs(false)
             setClip(false)
+            dashControls?.setActive(false)
         }
     }
 

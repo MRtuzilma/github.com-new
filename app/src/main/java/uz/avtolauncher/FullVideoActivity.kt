@@ -84,6 +84,10 @@ class FullVideoActivity : Activity() {
             val m = (14 * d).toInt()
             setMargins(m, m, m, m)
         })
+        // YouTube ilovasidagidek boshqaruv: tegilganda ⏮ ⏯ ⏭ va surish chizig'i, 2 s dan keyin yashirinadi
+        val controls = VideoControls(this, { Link.web }, DashActivity.YT_PREV_JS, DashActivity.YT_NEXT_JS, DashActivity.YT_PLAY_JS, DashActivity.YT_PAUSE_JS)
+        root.addView(controls, 1, VideoControls.lp())
+        controls.setActive(true)
         setContentView(root)
         web.onResume()
         // Video faqat o'zi ko'rinsin (YouTube sahifasining boshqa qismlari yashiriladi)
