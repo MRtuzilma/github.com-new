@@ -108,7 +108,14 @@ class DashActivity : Activity() {
                 'ytm-mobile-topbar-renderer header, header.mobile-topbar-header, ytm-mobile-topbar-renderer .mobile-topbar-header {' +
                 '  padding-right: 116px !important; box-sizing: border-box !important; }' +
                 'ytm-mobile-topbar-renderer button, ytm-mobile-topbar-renderer ytm-topbar-menu-button-renderer,' +
-                'header.mobile-topbar-header button { transform: scale(0.82); transform-origin: center; }';
+                'header.mobile-topbar-header button { transform: scale(0.82); transform-origin: center; }' +
+                /* "Keyingisi" (Up next) oynachasi, video oxiridagi tavsiyalar va kartochkalar — ko'rsatilmaydi */
+                'ytm-autonav-endscreen-renderer, .ytm-autonav-endscreen, [class*="autonav-endscreen"],' +
+                '.ytp-autonav-endscreen, .ytp-autonav-endscreen-countdown-overlay, .ytp-autonav-overlay,' +
+                '.ytp-upnext, .ytp-upnext-autoplay, .ytp-autonav-toggle-button-container,' +
+                '.ytp-endscreen-content, .html5-endscreen, .videowall-endscreen, .ytp-ce-element,' +
+                '.ytp-cards-teaser, .ytp-pause-overlay, .ytp-suggestion-set, ytm-endscreen-element-renderer' +
+                '{ display: none !important; visibility: hidden !important; pointer-events: none !important; }';
               document.head.appendChild(st);
             })()
         """
@@ -138,6 +145,10 @@ class DashActivity : Activity() {
               defs('webkitIsFullScreen', function(){ return !!window.__avtoFs; });
               defs('fullscreenEnabled', function(){ return true; });
               defs('webkitFullscreenEnabled', function(){ return true; });
+              try {
+                Object.defineProperty(HTMLVideoElement.prototype, 'webkitDisplayingFullscreen',
+                  {get: function(){ return !!window.__avtoFs; }, configurable: true});
+              } catch(e) {}
               window.__avtoSetFs = function(on){
                 var prev = window.__avtoFs;
                 var el = on ? (window.__avtoFsEl || prev || document.documentElement) : null;
@@ -1221,6 +1232,7 @@ class DashActivity : Activity() {
             addOverlayCloseButton(root) { exitOverlay() }
             overlayHoldsWeb = true
             expandStage = 2
+            fullSince = android.os.SystemClock.uptimeMillis()
             syncYtFs(true)
             if (playing) keepPlaying()
         }
@@ -1256,6 +1268,7 @@ class DashActivity : Activity() {
     /** ⤢ tugmasi (va YouTube'ning o'z to'liq ekran tugmasi):
      *  1-bosish — launcher oynasi ichida kattalashadi, 2-bosish — butun ekranga, 3-bosish — joyiga qaytadi. */
     private var expandStage = 0
+    private var fullSince = 0L
 
     private fun cycleExpand() {
         when (expandStage) {
@@ -1355,7 +1368,11 @@ class DashActivity : Activity() {
         fun enter() {
             runOnUiThread {
                 when {
-                    expandStage == 2 -> syncYtFs(true)
+                    // To'liq ekranda YouTube tugmasi yana bosilsa — ✕ kabi: joyiga qaytadi
+                    expandStage == 2 -> {
+                        if (android.os.SystemClock.uptimeMillis() - fullSince > 800) backToNormal()
+                        else syncYtFs(true)
+                    }
                     canOverlay() -> enterOverlay()
                     else -> {
                         setExpanded(true)
