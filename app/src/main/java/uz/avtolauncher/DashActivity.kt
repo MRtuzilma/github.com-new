@@ -915,6 +915,10 @@ class DashActivity : Activity() {
         if (w <= 0 || h <= 0) return
         val gap = dp(2)
         val wide = w > h * 1.15f
+        if (wide != wideLayout) {
+            wideLayout = wide
+            applyClip()
+        }
         content.orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         if (wide) {
             videoCard.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.3f).apply { marginEnd = gap }
@@ -2209,8 +2213,22 @@ class DashActivity : Activity() {
     /** Faqat video klipni ko'rsatish (YouTube sahifasining qolgan qismi yashiriladi). */
     /** Video sahifasida faqat videoning o'zi ko'rinadi (kichik oynada ham, katta ekranda ham). */
     @Suppress("UNUSED_PARAMETER")
-    private fun setClip(on: Boolean) {
-        web.evaluateJavascript("document.documentElement.classList.add('avto-clip');", null)
+    private fun setClip(on: Boolean) = applyClip()
+
+    /** Keng (3 ustunli) ko'rinishda — video ostida keyingi videolar takliflari ko'rinadi. */
+    private var wideLayout = false
+
+    /**
+     * "Faqat video" rejimi: kattalashtirilganda har doim; kichik oynada esa faqat tor (2 qatorli)
+     * ko'rinishda. Keng (3 ustunli) ko'rinishda video ostida keyingi videolar ro'yxati qoladi.
+     */
+    private fun applyClip() {
+        if (!::web.isInitialized) return
+        val clip = expandStage >= 1 || webAway || !wideLayout
+        web.evaluateJavascript(
+            if (clip) "document.documentElement.classList.add('avto-clip');"
+            else "document.documentElement.classList.remove('avto-clip');", null
+        )
     }
 
     /** Mashinadagi 📞 tugmasi: YouTube butun ekranga ↔ joyiga. */
@@ -2658,6 +2676,8 @@ class DashActivity : Activity() {
         findViewById<ImageButton>(R.id.btnVideoBack).setOnClickListener { if (web.canGoBack()) web.goBack() }
         findViewById<ImageButton>(R.id.btnVideoHome).setOnClickListener { web.loadUrl(YT_HOME) }
         findViewById<ImageButton>(R.id.btnVideoExpand).setOnClickListener { cycleExpand() }
+        // To'g'ridan-to'g'ri butun planshet ekraniga (Navigator ustiga ham)
+        findViewById<ImageButton>(R.id.btnVideoTablet).setOnClickListener { enterFull() }
     }
 
     /** YouTube butun oynani egallaydi (alohida ekrandek). */
