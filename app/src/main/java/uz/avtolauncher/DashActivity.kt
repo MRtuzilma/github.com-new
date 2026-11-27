@@ -320,6 +320,7 @@ class DashActivity : Activity() {
         videoCard = findViewById(R.id.videoCard)
         videoClip = findViewById(R.id.videoClip)
         web = findViewById(R.id.web)
+        (web as? BgWebView)?.keepAlive = { bgPlayEnabled() && ytPlaying }
         fullHolder = findViewById(R.id.fullHolder)
         infoSwipe = findViewById(R.id.infoSwipe)
         topRow = findViewById(R.id.topRow)
@@ -440,6 +441,7 @@ class DashActivity : Activity() {
         else registerReceiver(batteryReceiver, filter)
         handler.post(themeCheck)
         web.onResume()
+        BgPlayService.stop(this) // launcher ko'rinib turibdi — fon xizmati kerak emas
         val tf = IntentFilter().apply {
             addAction(Intent.ACTION_TIME_TICK)
             addAction(Intent.ACTION_DATE_CHANGED)
@@ -504,12 +506,21 @@ class DashActivity : Activity() {
         handler.removeCallbacks(statsTick)
         // Ekran butunlay ko'rinmay qolganda video to'xtaydi. Navigator yonida tursa — to'xtamaydi.
         web.url?.let { prefs().edit().putString("url", it).apply() }
-        if (!webAway) web.onPause()
+        if (!webAway) {
+            if (bgPlayEnabled() && ytPlaying && !isFinishing) {
+                // Fon rejimi: WebView to'xtatilmaydi, musiqa davom etadi
+                startBgPlay()
+            } else {
+                web.onPause()
+            }
+        }
         super.onStop()
     }
 
     override fun onDestroy() {
         if (webAway) FullVideoActivity.Link.close()
+        BgPlayService.control = null
+        BgPlayService.stop(this)
         try {
             session?.release()
         } catch (e: Exception) {
@@ -711,7 +722,8 @@ class DashActivity : Activity() {
             "💼  Hozirgi joyni Ish deb saqlash",
             "🧭  Navigator'ni yonida ochish",
             "🔄  Safar hisobini nolga tushirish",
-            "🔧  Texnik xizmat daftarchasi"
+            "🔧  Texnik xizmat daftarchasi",
+            "🎵  YouTube fon rejimi: " + (if (bgPlayEnabled()) "yoqiq" else "o'chiq")
         )
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Sozlamalar")
@@ -746,6 +758,17 @@ class DashActivity : Activity() {
                         }
                         .setNegativeButton("Yo'q", null).show()
                     7 -> Slots.open(this, Slots.SERVICE)
+                    8 -> {
+                        val on = !bgPlayEnabled()
+                        prefs().edit().putBoolean("bg_play", on).apply()
+                        if (on) askNotificationsOnce()
+                        Toast.makeText(
+                            this,
+                            if (on) "🎵 YouTube musiqasi boshqa ilova ochilganda ham, ekran o'chganda ham o'ynayveradi"
+                            else "YouTube launcher yopilganda to'xtaydi",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
                 }
             }
             .show()
@@ -1746,6 +1769,8 @@ class DashActivity : Activity() {
                 if (t != ytTitle) {
                     ytTitle = t
                     updateSession()
+                    BgPlayService.title = t
+                    BgPlayService.refresh(this@DashActivity)
                 }
             }
         }
@@ -1778,6 +1803,8 @@ class DashActivity : Activity() {
                 if (playing) lastSource = "yt"
                 updatePlayIcon()
                 updateSession()
+                BgPlayService.playing = playing
+                BgPlayService.refresh(this@DashActivity)
             }
         }
     }
@@ -1840,6 +1867,38 @@ class DashActivity : Activity() {
      */
     private var session: android.media.session.MediaSession? = null
     private var ytTitle = ""
+
+    // =================== YouTube fon rejimi ===================
+
+    private fun bgPlayEnabled() = prefs().getBoolean("bg_play", true)
+
+    private fun startBgPlay() {
+        BgPlayService.title = ytTitle
+        BgPlayService.playing = true
+        BgPlayService.token = session?.sessionToken
+        BgPlayService.control = { a ->
+            runOnUiThread {
+                when (a) {
+                    BgPlayService.ACTION_PREV -> web.evaluateJavascript(YT_PREV_JS, null)
+                    BgPlayService.ACTION_NEXT -> web.evaluateJavascript(YT_NEXT_JS, null)
+                    BgPlayService.ACTION_TOGGLE -> if (ytPlaying) ytPause() else ytPlay()
+                    BgPlayService.ACTION_STOP -> {
+                        ytPause()
+                        handler.postDelayed({ if (!hasWindowFocus()) web.onPause() }, 400)
+                    }
+                }
+            }
+        }
+        BgPlayService.start(this)
+    }
+
+    private fun askNotificationsOnce() {
+        if (Build.VERSION.SDK_INT < 33) return
+        if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        if (prefs().getBoolean("asked_notif", false)) return
+        prefs().edit().putBoolean("asked_notif", true).apply()
+        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 91)
+    }
 
     private fun setupSession() {
         try {
