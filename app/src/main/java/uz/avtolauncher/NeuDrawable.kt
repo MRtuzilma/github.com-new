@@ -38,7 +38,20 @@ class NeuDrawable(
 
         /** Soya uchun kerakli chet (view padding'i shundan kichik bo'lmasin). */
         fun margin(depth: Float) = depth * 1.7f
+
+        /**
+         * Soyali rasmlar fon oqimida chiziladi — ilova ochilganda va ekran bo'linganda
+         * asosiy oqim (tugmalar, YouTube) qotib qolmasligi uchun.
+         */
+        private val worker = java.util.concurrent.Executors.newFixedThreadPool(2) { r ->
+            Thread(r, "neu-render").apply { priority = Thread.NORM_PRIORITY - 1; isDaemon = true }
+        }
+        private val main = android.os.Handler(android.os.Looper.getMainLooper())
     }
+
+    /** Hozir fonda chizilayotgan rasmlar (o'lcham + holat). */
+    private val pending = HashSet<Long>()
+    private val quickPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private var pressed = false
     private var raisedBmp: Bitmap? = null
@@ -78,12 +91,53 @@ class NeuDrawable(
         val b = bounds
         if (b.width() <= 0 || b.height() <= 0) return
         val inset = mode == INSET || (mode == BUTTON && pressed)
-        val bmp = if (inset) {
-            insetBmp ?: render(true).also { insetBmp = it }
-        } else {
-            raisedBmp ?: render(false).also { raisedBmp = it }
+        val bmp = if (inset) insetBmp else raisedBmp
+        if (bmp != null) {
+            canvas.drawBitmap(bmp, b.left.toFloat(), b.top.toFloat(), null)
+            return
         }
-        canvas.drawBitmap(bmp, b.left.toFloat(), b.top.toFloat(), null)
+        // Rasm hali tayyor emas — oddiy shaklni darhol chizamiz, soyalisini fonda tayyorlaymiz
+        drawQuick(canvas, inset)
+        requestRender(inset)
+    }
+
+    private fun drawQuick(canvas: Canvas, inset: Boolean) {
+        val b = bounds
+        val m = margin(depth)
+        val r = if (shape == OVAL) {
+            val size = minOf(b.width(), b.height()) - 2 * m
+            RectF(b.exactCenterX() - size / 2f, b.exactCenterY() - size / 2f, b.exactCenterX() + size / 2f, b.exactCenterY() + size / 2f)
+        } else RectF(b.left + m, b.top + m, b.right - m, b.bottom - m)
+        if (r.width() <= 0 || r.height() <= 0) return
+        quickPaint.color = if (inset) p.well else p.surface
+        canvas.drawPath(path(r), quickPaint)
+    }
+
+    private fun requestRender(inset: Boolean) {
+        val w = bounds.width()
+        val h = bounds.height()
+        val key = cacheKey
+        val job = key * 2 + (if (inset) 1 else 0)
+        if (!pending.add(job)) return
+        worker.execute {
+            val bmp = try {
+                render(w, h, inset)
+            } catch (e: Throwable) {
+                null
+            }
+            main.post {
+                pending.remove(job)
+                if (bmp == null) return@post
+                if (key == cacheKey) {
+                    if (inset) insetBmp = bmp else raisedBmp = bmp
+                    invalidateSelf()
+                } else {
+                    // O'lcham allaqachon o'zgargan — keyinroq kerak bo'lishi mumkin, keshga qo'yamiz
+                    val old = sizeCache[key]
+                    sizeCache[key] = if (inset) (old?.first to bmp) else (bmp to old?.second)
+                }
+            }
+        }
     }
 
     private fun path(r: RectF): Path = Path().apply {
@@ -91,9 +145,7 @@ class NeuDrawable(
         else addRoundRect(r, radius, radius, Path.Direction.CW)
     }
 
-    private fun render(inset: Boolean): Bitmap {
-        val w = bounds.width()
-        val h = bounds.height()
+    private fun render(w: Int, h: Int, inset: Boolean): Bitmap {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val m = margin(depth)

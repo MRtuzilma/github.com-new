@@ -2300,8 +2300,15 @@ class DashActivity : Activity() {
         }
         showVideoButtons()
         web.addJavascriptInterface(Bridge(), "AvtoBridge")
+        web.setBackgroundColor(0xFF000000.toInt())
         if (state != null) web.restoreState(state)
-        if (web.url == null) web.loadUrl(prefs().getString("url", YT_HOME) ?: YT_HOME)
+        // YouTube sahifasini biroz keyin yuklaymiz: avval launcher chiziladi va Navigator yonma-yon
+        // ochiladi — ikkalasi bir vaqtda bo'lsa, ochilishda qotish sezilardi
+        if (web.url == null) {
+            handler.postDelayed({
+                if (!isFinishing && web.url == null) web.loadUrl(prefs().getString("url", YT_HOME) ?: YT_HOME)
+            }, 1500)
+        }
 
         findViewById<ImageButton>(R.id.btnVideoBack).setOnClickListener { if (web.canGoBack()) web.goBack() }
         findViewById<ImageButton>(R.id.btnVideoHome).setOnClickListener { web.loadUrl(YT_HOME) }
