@@ -136,6 +136,11 @@ class DashActivity : Activity() {
             })()
         """
 
+        private const val YT_PLAY_JS =
+            "(function(){var v=document.querySelector('video');if(v){window.__avtoWant=true;v.play().catch(function(){});}})()"
+        private const val YT_PAUSE_JS =
+            "(function(){window.__avtoWant=false;var v=document.querySelector('video');if(v)v.pause();})()"
+
         private const val YT_SHOW_BAR_JS = "document.documentElement.classList.remove('avto-hide');"
 
         private const val KEEP_VISIBLE_JS = """
@@ -198,6 +203,7 @@ class DashActivity : Activity() {
               var report = function(e){
                 var v = e.target; if (!v || v.tagName !== 'VIDEO' || v.muted) return;
                 try { AvtoBridge.state(!v.paused && !v.ended); } catch(x) {}
+                try { AvtoBridge.meta(document.title || ''); } catch(x) {}
               };
               ['play','playing','pause','ended'].forEach(function(t){ document.addEventListener(t, report, true); });
 
@@ -389,6 +395,7 @@ class DashActivity : Activity() {
         infoSwipe.listener = volumeListener
 
         setupVideo(savedInstanceState)
+        setupSession()
         applyTheme()
         Weather.cached(this)?.let { showWeather(it) }
 
@@ -473,11 +480,16 @@ class DashActivity : Activity() {
         handler.removeCallbacks(statsTick)
         // Ekran butunlay ko'rinmay qolganda video to'xtaydi. Navigator yonida tursa — to'xtamaydi.
         web.url?.let { prefs().edit().putString("url", it).apply() }
-        web.onPause()
+        if (!webAway) web.onPause()
         super.onStop()
     }
 
     override fun onDestroy() {
+        if (webAway) FullVideoActivity.Link.close()
+        try {
+            session?.release()
+        } catch (e: Exception) {
+        }
         hideCustomView()
         if (overlayHoldsWeb) overlayRoot?.removeView(web)
         removeOverlayWindow()
@@ -1248,7 +1260,46 @@ class DashActivity : Activity() {
         })
     }
 
-    /** 2-bosqich: YouTube butun ekranga (Navigator ustiga ham). Video holati avval aniqlanadi, keyin ko'chiriladi. */
+    /** Video hozir launcherdan tashqarida (to'liq ekranli oynada). */
+    private var webAway = false
+
+    /**
+     * 2-bosqich: YouTube HAQIQIY to'liq ekranga — holat qatori va pastki panel yashiriladi.
+     * Bo'lingan ekranda buni qilib bo'lmagani uchun launcher avval bosh ekranga o'tadi va
+     * u yerdan alohida to'liq ekranli oyna ochiladi. Yopilganda video joyiga qaytadi.
+     */
+    private fun enterFull() {
+        if (webAway) return
+        withPlayingState { playing ->
+            webAway = true
+            videoClip.removeView(web)
+            FullVideoActivity.Link.web = web
+            FullVideoActivity.Link.onExit = {
+                // Video launcherga qaytadi
+                (web.parent as? ViewGroup)?.removeView(web)
+                videoClip.addView(web, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                webAway = false
+                setExpanded(false)
+                expandStage = 0
+                syncYtFs(false)
+                web.onResume()
+                if (playing || ytPlaying) keepPlaying()
+            }
+            expandStage = 2
+            fullSince = android.os.SystemClock.uptimeMillis()
+            syncYtFs(true)
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .putExtra(MainActivity.EXTRA_FULL_VIDEO, true)
+            )
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+            if (playing) keepPlaying()
+        }
+    }
+
+    /** (Eski usul — endi ishlatilmaydi.) */
     private fun enterOverlay() {
         if (!canOverlay()) {
             askOverlayPermission()
@@ -1307,13 +1358,8 @@ class DashActivity : Activity() {
                 expandStage = 1
                 syncYtFs(false)
             }
-            1 -> if (canOverlay()) enterOverlay() else {
-                setExpanded(false)
-                expandStage = 0
-                syncYtFs(false)
-                askOverlayPermission()
-            }
-            else -> exitOverlay()
+            1 -> enterFull()
+            else -> backToNormal()
         }
     }
 
@@ -1324,7 +1370,9 @@ class DashActivity : Activity() {
 
     /** Har qanday kattalashtirilgan holatdan — oddiy ko'rinishga (panel bilan). */
     private fun backToNormal() {
-        if (overlayRoot != null || expandStage == 2) {
+        if (webAway) {
+            FullVideoActivity.Link.close()
+        } else if (overlayRoot != null) {
             exitOverlay()
         } else {
             setExpanded(false)
@@ -1393,6 +1441,18 @@ class DashActivity : Activity() {
             runOnUiThread { cycleExpand() }
         }
 
+        /** Video nomi — magnitofon ekranida ko'rsatish uchun. */
+        @android.webkit.JavascriptInterface
+        fun meta(title: String?) {
+            runOnUiThread {
+                val t = (title ?: "").removeSuffix(" - YouTube").trim()
+                if (t != ytTitle) {
+                    ytTitle = t
+                    updateSession()
+                }
+            }
+        }
+
         /** YouTube'ning o'z "to'liq ekran" tugmasi — darhol butun ekranga. */
         @android.webkit.JavascriptInterface
         fun enter() {
@@ -1403,12 +1463,7 @@ class DashActivity : Activity() {
                         if (android.os.SystemClock.uptimeMillis() - fullSince > 800) backToNormal()
                         else syncYtFs(true)
                     }
-                    canOverlay() -> enterOverlay()
-                    else -> {
-                        setExpanded(true)
-                        expandStage = 1
-                        syncYtFs(true)
-                    }
+                    else -> enterFull()
                 }
             }
         }
@@ -1425,6 +1480,7 @@ class DashActivity : Activity() {
                 ytPlaying = playing
                 if (playing) lastSource = "yt"
                 updatePlayIcon()
+                updateSession()
             }
         }
     }
@@ -1454,6 +1510,7 @@ class DashActivity : Activity() {
 
     private fun otherPlayPause() {
         lastSource = "other"
+        updateSession()
         sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
         localPlaying = !localPlaying
         updatePlayIcon()
@@ -1461,12 +1518,101 @@ class DashActivity : Activity() {
 
     private fun mediaNext() {
         if (ytIsTarget()) web.evaluateJavascript(YT_NEXT_JS, null)
-        else sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+        else {
+            lastSource = "other"
+            updateSession()
+            sendMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+        }
     }
 
     private fun mediaPrev() {
         if (ytIsTarget()) web.evaluateJavascript(YT_PREV_JS, null)
-        else sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+        else {
+            lastSource = "other"
+            updateSession()
+            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+        }
+    }
+
+    // =================== Mashina magnitofoni (Bluetooth) orqali YouTube'ni boshqarish ===================
+
+    /**
+     * Magnitofondagi ⏮ ⏯ ⏭ tugmalari planshetdagi "media sessiya"ga keladi.
+     * YouTube oynasida o'z sessiyasi yo'q — shuning uchun launcher YouTube uchun sessiya ochadi:
+     * YouTube o'ynayotganda magnitofon tugmalari YouTube'ni boshqaradi, ekranida esa video nomi chiqadi.
+     */
+    private var session: android.media.session.MediaSession? = null
+    private var ytTitle = ""
+
+    private fun setupSession() {
+        try {
+            val ms = android.media.session.MediaSession(this, "AvtoLauncherYouTube")
+            @Suppress("DEPRECATION")
+            ms.setFlags(
+                android.media.session.MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or
+                        android.media.session.MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS
+            )
+            ms.setCallback(object : android.media.session.MediaSession.Callback() {
+                override fun onPlay() = ytPlay()
+                override fun onPause() = ytPause()
+                override fun onStop() = ytPause()
+                override fun onSkipToNext() {
+                    lastSource = "yt"
+                    web.evaluateJavascript(YT_NEXT_JS, null)
+                }
+
+                override fun onSkipToPrevious() {
+                    lastSource = "yt"
+                    web.evaluateJavascript(YT_PREV_JS, null)
+                }
+            }, handler)
+            session = ms
+            updateSession()
+        } catch (e: Exception) {
+        }
+    }
+
+    private fun ytPlay() {
+        lastSource = "yt"
+        web.evaluateJavascript(YT_PLAY_JS, null)
+    }
+
+    private fun ytPause() {
+        web.evaluateJavascript(YT_PAUSE_JS, null)
+    }
+
+    /** Sessiya faqat YouTube o'ynayotganda (yoki oxirgi ishlatilgan pleyer YouTube bo'lsa) faol bo'ladi. */
+    private fun updateSession() {
+        val ms = session ?: return
+        val active = ytPlaying || (lastSource == "yt" && !audio.isMusicActive)
+        try {
+            ms.setPlaybackState(
+                android.media.session.PlaybackState.Builder()
+                    .setActions(
+                        android.media.session.PlaybackState.ACTION_PLAY or
+                                android.media.session.PlaybackState.ACTION_PAUSE or
+                                android.media.session.PlaybackState.ACTION_PLAY_PAUSE or
+                                android.media.session.PlaybackState.ACTION_STOP or
+                                android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT or
+                                android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS
+                    )
+                    .setState(
+                        if (ytPlaying) android.media.session.PlaybackState.STATE_PLAYING
+                        else android.media.session.PlaybackState.STATE_PAUSED,
+                        android.media.session.PlaybackState.PLAYBACK_POSITION_UNKNOWN,
+                        if (ytPlaying) 1f else 0f
+                    )
+                    .build()
+            )
+            ms.setMetadata(
+                android.media.MediaMetadata.Builder()
+                    .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, ytTitle.ifEmpty { "YouTube" })
+                    .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "YouTube")
+                    .build()
+            )
+            if (ms.isActive != active) ms.isActive = active
+        } catch (e: Exception) {
+        }
     }
 
     // =================== YouTube ===================

@@ -62,5 +62,13 @@
             android:resizeableActivity="true"
             android:taskAffinity="uz.avtolauncher.dash" />
 
+        <!-- YouTube'ning haqiqiy to'liq ekrani (holat qatori va pastki panelsiz) -->
+        <activity
+            android:name=".FullVideoActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
     </application>
 </manifest>
