@@ -11,8 +11,8 @@ android {
         applicationId = "uz.avtolauncher"
         minSdk = 21
         targetSdk = 34
-        versionCode = 37
-        versionName = "5.0"
+        versionCode = 38
+        versionName = "5.1"
     }
 
     // Doimiy sinov imzosi: har bir yangi versiya eskisining ustidan o'rnatiladi.

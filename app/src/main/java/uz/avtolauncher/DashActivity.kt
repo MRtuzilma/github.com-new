@@ -535,6 +535,7 @@ class DashActivity : Activity() {
         if (MainActivity.homePending) {
             MainActivity.homePending = false
             clockOverlay?.visibility = View.GONE
+            if (clockWindow != null) hideClockOverlay()
             // Bosh ekrandan qaytdik: planshet oldingi bo'lingan ekranni (siz surgan o'lcham bilan)
             // tiklashi uchun vaqt beramiz. Faqat 3 soniyada ham tiklanmasa — Navigator'ni o'zimiz ochamiz
             // (shoshilib ochsak, planshet tiklayotgan ekranni buzib, o'lchamni 50/50 ga qaytarardi).
@@ -594,6 +595,13 @@ class DashActivity : Activity() {
         if (webAway) FullVideoActivity.Link.close()
         stopGps()
         handler.removeCallbacks(webWatch)
+        clockWindow?.let {
+            try {
+                (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
+            } catch (e: Exception) {
+            }
+            clockWindow = null
+        }
         BgPlayService.control = null
         BgPlayService.stop(this)
         MainActivity.carKey = null
@@ -669,7 +677,7 @@ class DashActivity : Activity() {
         when {
             statOverlay.visibility == View.VISIBLE -> closeStat()
             customView != null -> hideCustomView()
-            clockOverlay?.visibility == View.VISIBLE -> hideClockOverlay()
+            clockWindow != null || clockOverlay?.visibility == View.VISIBLE -> hideClockOverlay()
             expanded || expandStage != 0 -> backToNormal()
             // Bosh ekranda "Orqaga" — YouTube sahifasi orqaga ketmaydi, katta soat ko'rsatiladi
             // (YouTube ichida orqaga qaytish uchun video ostidagi ◀ tugmasi bor)
@@ -680,22 +688,112 @@ class DashActivity : Activity() {
     // =================== Katta soat (Orqaga tugmasi) ===================
 
     private var clockOverlay: FrameLayout? = null
+    private var clockWindow: FrameLayout? = null
 
     private fun showClockOverlay() {
-        val ov = clockOverlay ?: buildClockOverlay().also { clockOverlay = it }
+        // Ruxsat bo'lsa — butun planshet ekrani bo'ylab (Navigator, status bar va pastki panel ustida ham)
+        if (canOverlay() && showClockWindow()) return
+        if (!canOverlay() && !prefs().getBoolean("asked_clock_overlay", false)) {
+            prefs().edit().putBoolean("asked_clock_overlay", true).apply()
+            Toast.makeText(
+                this,
+                "Soat butun ekranni qoplashi uchun «Boshqa ilovalar ustida ko'rsatish» ruxsatini bering",
+                Toast.LENGTH_LONG
+            ).show()
+            askOverlayPermission()
+        }
+        val ov = clockOverlay ?: buildClockOverlay().also {
+            clockOverlay = it
+            (root as ViewGroup).addView(it, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
         ov.alpha = 0f
         ov.visibility = View.VISIBLE
         ov.bringToFront()
         ov.animate().alpha(1f).setDuration(220).start()
     }
 
+    /** Butun ekranli soat oynasi (hamma narsa ustida). */
+    @Suppress("DEPRECATION")
+    private fun showClockWindow(): Boolean {
+        if (clockWindow != null) return true
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val ov = object : FrameLayout(this) {
+            override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+                    if (event.action == KeyEvent.ACTION_UP) hideClockOverlay()
+                    return true
+                }
+                return super.dispatchKeyEvent(event)
+            }
+        }
+        fillClockView(ov)
+        ov.isFocusable = true
+        ov.isFocusableInTouchMode = true
+        val type = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        else WindowManager.LayoutParams.TYPE_PHONE
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            type,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+            android.graphics.PixelFormat.TRANSLUCENT
+        )
+        lp.gravity = Gravity.TOP or Gravity.START
+        if (Build.VERSION.SDK_INT >= 28) {
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        // Butun jismoniy ekran o'lchami — panellar joyini ham qoplash uchun
+        val dm = android.util.DisplayMetrics()
+        wm.defaultDisplay.getRealMetrics(dm)
+        lp.width = dm.widthPixels
+        lp.height = dm.heightPixels
+        return try {
+            wm.addView(ov, lp)
+            clockWindow = ov
+            // Status bar va pastki panelni ham yashirishga urinamiz (soat ustida turishi uchun)
+            ov.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
+            if (Build.VERSION.SDK_INT >= 30) {
+                ov.post {
+                    ov.windowInsetsController?.let {
+                        it.hide(WindowInsets.Type.systemBars())
+                        it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    }
+                }
+            }
+            ov.requestFocus()
+            ov.alpha = 0f
+            ov.animate().alpha(1f).setDuration(220).start()
+            true
+        } catch (e: Exception) {
+            Diag.log("Soat oynasini ochib bo'lmadi: $e")
+            false
+        }
+    }
+
     private fun hideClockOverlay() {
+        clockWindow?.let { w ->
+            clockWindow = null
+            w.animate().alpha(0f).setDuration(180).withEndAction {
+                try {
+                    (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(w)
+                } catch (e: Exception) {
+                }
+                hideSystemBars()
+            }.start()
+        }
         val ov = clockOverlay ?: return
         ov.animate().alpha(0f).setDuration(180).withEndAction { ov.visibility = View.GONE }.start()
     }
 
-    private fun buildClockOverlay(): FrameLayout {
-        val ov = FrameLayout(this)
+    private fun buildClockOverlay(): FrameLayout = FrameLayout(this).also { fillClockView(it) }
+
+    private fun fillClockView(ov: FrameLayout) {
+        ov.visibility = View.VISIBLE
         // Qora shaffof parda — ortidan launcher xira ko'rinib turadi
         ov.setBackgroundColor(0xE6000000.toInt())
         ov.isClickable = true
@@ -736,8 +834,6 @@ class DashActivity : Activity() {
             val size = (minOf(v.width / 3.2f, v.height / 2.6f) / resources.displayMetrics.scaledDensity).coerceIn(40f, 220f)
             if (Math.abs(time.textSize / resources.displayMetrics.scaledDensity - size) > 1f) time.post { time.textSize = size }
         }
-        (root as ViewGroup).addView(ov, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        return ov
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
