@@ -12,6 +12,8 @@ import android.os.Bundle
 class CarKeyActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Diag.init(this)
+        Diag.log("📞 Ovozli buyruq so'rovi keldi (mashina tugmasi?) action=${intent?.action}")
         val cb = MainActivity.carKey
         if (cb != null) {
             cb()

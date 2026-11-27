@@ -79,6 +79,9 @@
         <!-- YouTube'ning haqiqiy to'liq ekrani (holat qatori va pastki panelsiz) -->
         <activity
             android:name=".FullVideoActivity"
+            android:launchMode="singleTask"
+            android:taskAffinity="uz.avtolauncher.video"
+            android:resizeableActivity="false"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard"
             android:excludeFromRecents="true"
             android:exported="false"

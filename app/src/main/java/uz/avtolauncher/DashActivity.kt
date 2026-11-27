@@ -377,6 +377,7 @@ class DashActivity : Activity() {
         content = findViewById(R.id.content)
         videoCard = findViewById(R.id.videoCard)
         videoClip = findViewById(R.id.videoClip)
+        Diag.init(this)
         web = findViewById(R.id.web)
         watchSystemBars()
         MainActivity.carKey = { runOnUiThread { carKeyToggle() } }
@@ -525,7 +526,7 @@ class DashActivity : Activity() {
         updateDate()
         handler.post(statsTick)
         val b = prefs().getFloat("brightness", -1f)
-        if (b >= 0f && !canWriteSettings()) window.attributes = window.attributes.apply { screenBrightness = b }
+        if (b >= 0f && !canWriteSettings()) window.attributes = window.attributes.apply { screenBrightness = toLinear(b) }
     }
 
     override fun onResume() {
@@ -596,6 +597,7 @@ class DashActivity : Activity() {
     }
 
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: android.content.res.Configuration) {
+        Diag.log("Launcher: ekran bo'linishi = $isInMultiWindowMode")
         handler.postDelayed(reHideBars, 500)
         super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
         updateRestoreBar()
@@ -631,6 +633,15 @@ class DashActivity : Activity() {
                 }
             }
         }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode != KeyEvent.KEYCODE_BACK) Diag.log("Tugma: ${KeyEvent.keyCodeToString(keyCode)}")
+        if (keyCode == KeyEvent.KEYCODE_CALL) {
+            carKeyToggle()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     @Deprecated("Activity API")
@@ -809,7 +820,8 @@ class DashActivity : Activity() {
             "🧭  Navigator'ni yonida ochish",
             "🔄  Safar hisobini nolga tushirish",
             "🔧  Texnik xizmat daftarchasi",
-            "🎵  YouTube fon rejimi: " + (if (bgPlayEnabled()) "yoqiq" else "o'chiq")
+            "🎵  YouTube fon rejimi: " + (if (bgPlayEnabled()) "yoqiq" else "o'chiq"),
+            "🩺  Diagnostika (xatolarni ko'rish)"
         )
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Sozlamalar")
@@ -844,6 +856,7 @@ class DashActivity : Activity() {
                         }
                         .setNegativeButton("Yo'q", null).show()
                     7 -> Slots.open(this, Slots.SERVICE)
+                    9 -> showDiag()
                     8 -> {
                         val on = !bgPlayEnabled()
                         prefs().edit().putBoolean("bg_play", on).apply()
@@ -858,6 +871,28 @@ class DashActivity : Activity() {
                 }
             }
             .show()
+    }
+
+    private fun showDiag() {
+        val mw = if (Build.VERSION.SDK_INT >= 24) isInMultiWindowMode else false
+        val head = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}\n" +
+                "Ekran bo'lingan: ${if (mw) "ha" else "yo'q"} · Navigator: ${Slots.navigatorPackage(this) ?: "yo'q"}\n" +
+                "Ilova versiyasi: " + (try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "?" }) + "\n\n"
+        val tv = TextView(this).apply {
+            text = head + Diag.text().ifEmpty { "(hali yozuv yo'q)" }
+            textSize = 11f
+            setTextColor(0xFFE8EDF2.toInt())
+            setTextIsSelectable(true)
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+        }
+        val sv = android.widget.ScrollView(this).apply { addView(tv) }
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("🩺 Diagnostika")
+            .setView(sv)
+            .setPositiveButton("Yopish", null)
+            .setNeutralButton("Tozalash") { _, _ -> Diag.clear() }
+            .show()
+        sv.post { sv.fullScroll(View.FOCUS_DOWN) }
     }
 
     // =================== Tezlik ogohlantirishi ===================
@@ -1075,6 +1110,8 @@ class DashActivity : Activity() {
 
         // ---- Spidometr ustida surish: ekran yorqinligi ----
         override fun onBrightnessSwipeStart() {
+            brightStart = currentBrightness()
+            brightNow = brightStart
             handler.removeCallbacks(hideVolume)
             volumeOverlay.animate().cancel()
             volumeOverlay.label = "YORUG'LIK"
@@ -1083,13 +1120,24 @@ class DashActivity : Activity() {
             volumeOverlay.setLevel((currentBrightness() * 100).toInt(), 100)
         }
 
-        override fun onBrightnessStep(delta: Int) {
-            setBrightness(currentBrightness() + delta * 0.05f)
-            volumeOverlay.setLevel((currentBrightness() * 100).toInt(), 100)
+        override fun onBrightnessStep(delta: Int) {}
+
+        override fun onBrightnessDrag(fraction: Float) {
+            val v = (brightStart + fraction).coerceIn(0.03f, 1f)
+            brightNow = v
+            // Darhol (silliq) — oyna yorqinligi; tizim sozlamasi kamroq yoziladi
+            window.attributes = window.attributes.apply { screenBrightness = toLinear(v) }
+            volumeOverlay.setLevel((v * 100).toInt(), 100)
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastBrightWrite > 250) {
+                lastBrightWrite = now
+                writeSystemBrightness(v)
+            }
         }
 
         override fun onBrightnessSwipeEnd() {
             handler.postDelayed(hideVolume, 1200)
+            setBrightness(brightNow)
             askWriteSettingsOnce()
         }
 
@@ -1116,11 +1164,32 @@ class DashActivity : Activity() {
     private fun canWriteSettings() = Build.VERSION.SDK_INT < 23 || android.provider.Settings.System.canWrite(this)
 
     /** Joriy yorqinlik 0..1 (saqlangan qiymat yoki tizimniki). */
+    private var brightStart = 0.6f
+    private var brightNow = 0.6f
+    private var lastBrightWrite = 0L
+
+    /** Ko'z sezishiga mos (perseptual) qiymatdan ekranning chiziqli yorqinligiga. */
+    private fun toLinear(v: Float): Float = Math.pow(v.toDouble(), 2.2).toFloat().coerceIn(0.004f, 1f)
+
+    private fun writeSystemBrightness(v: Float) {
+        if (!canWriteSettings()) return
+        try {
+            android.provider.Settings.System.putInt(
+                contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE,
+                android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            )
+            android.provider.Settings.System.putInt(
+                contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS, (toLinear(v) * 255).toInt().coerceIn(2, 255)
+            )
+        } catch (e: Exception) {
+        }
+    }
+
     private fun currentBrightness(): Float {
         val saved = prefs().getFloat("brightness", -1f)
         if (saved >= 0f) return saved
         return try {
-            android.provider.Settings.System.getInt(contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS) / 255f
+            Math.pow(android.provider.Settings.System.getInt(contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS) / 255.0, 1 / 2.2).toFloat()
         } catch (e: Exception) {
             0.6f
         }
@@ -1140,7 +1209,7 @@ class DashActivity : Activity() {
                     android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
                 )
                 android.provider.Settings.System.putInt(
-                    contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS, (v * 255).toInt().coerceIn(3, 255)
+                    contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS, (toLinear(v) * 255).toInt().coerceIn(2, 255)
                 )
                 window.attributes = window.attributes.apply {
                     screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
@@ -1149,7 +1218,7 @@ class DashActivity : Activity() {
             } catch (e: Exception) {
             }
         }
-        window.attributes = window.attributes.apply { screenBrightness = v }
+        window.attributes = window.attributes.apply { screenBrightness = toLinear(v) }
     }
 
     /** Butun planshet uchun yorqinlikni saqlash ruxsati (bir marta so'raladi). */
@@ -1675,6 +1744,7 @@ class DashActivity : Activity() {
      * u yerdan alohida to'liq ekranli oyna ochiladi. Yopilganda video joyiga qaytadi.
      */
     private fun enterFull() {
+        Diag.log("Butun ekranga o'tish so'raldi (bosqich=$expandStage, webAway=$webAway, bo'lingan=$inMultiWindow)")
         if (webAway) return
         withPlayingState { playing ->
             webAway = true
@@ -1695,11 +1765,15 @@ class DashActivity : Activity() {
             expandStage = 2
             fullSince = android.os.SystemClock.uptimeMillis()
             syncYtFs(true)
-            startActivity(
-                Intent(this, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    .putExtra(MainActivity.EXTRA_FULL_VIDEO, true)
-            )
+            try {
+                startActivity(
+                    Intent(this, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        .putExtra(MainActivity.EXTRA_FULL_VIDEO, true)
+                )
+            } catch (e: Exception) {
+                Diag.log("XATO: bosh ekranga o'tib bo'lmadi: $e")
+            }
             @Suppress("DEPRECATION")
             overridePendingTransition(0, 0)
             if (playing) keepPlaying()
@@ -1765,6 +1839,7 @@ class DashActivity : Activity() {
                 expandStage = 1
                 syncYtFs(false)
                 setClip(true) // o'z oynasida faqat video klip
+                withPlayingState { if (it) keepPlaying() }
             }
             1 -> enterFull()
             else -> backToNormal()
@@ -1781,6 +1856,7 @@ class DashActivity : Activity() {
 
     /** Mashinadagi 📞 tugmasi: YouTube butun ekranga ↔ joyiga. */
     private fun carKeyToggle() {
+        Diag.log("📞 Mashina tugmasi: YouTube ekranini almashtirish (bosqich=$expandStage)")
         if (expandStage == 0 && !webAway) enterFull() else backToNormal()
     }
 
@@ -2017,6 +2093,7 @@ class DashActivity : Activity() {
                 override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
                     @Suppress("DEPRECATION")
                     val ev = mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    if (ev != null && ev.action == KeyEvent.ACTION_DOWN) Diag.log("Magnitola tugmasi: ${KeyEvent.keyCodeToString(ev.keyCode)}")
                     if (ev != null && ev.keyCode == KeyEvent.KEYCODE_CALL) {
                         if (ev.action == KeyEvent.ACTION_UP) carKeyToggle()
                         return true

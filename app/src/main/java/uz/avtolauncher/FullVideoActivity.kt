@@ -48,6 +48,7 @@ class FullVideoActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val web = Link.web
+        Diag.log("Video oynasi yaratildi (web=${web != null})")
         if (web == null) {
             finish()
             return
@@ -103,6 +104,9 @@ class FullVideoActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        val mw = if (Build.VERSION.SDK_INT >= 24) isInMultiWindowMode else false
+        val dm = resources.displayMetrics
+        Diag.log("Video oynasi ekranda: multiWindow=$mw, o'lcham=${window.decorView.width}x${window.decorView.height} (ekran ${dm.widthPixels}x${dm.heightPixels})")
         hideBars()
         handler.postDelayed(reHide, 400)
     }

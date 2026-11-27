@@ -25,12 +25,14 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.decorView.setBackgroundColor(0xFF000000.toInt())
+        Diag.init(this)
         openFullVideo = intent?.getBooleanExtra(EXTRA_FULL_VIDEO, false) == true
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        Diag.log("Bosh ekran: yangi buyruq full=${intent.getBooleanExtra(EXTRA_FULL_VIDEO, false)} video_ochiq=${FullVideoActivity.Link.current != null}")
         if (intent.getBooleanExtra(EXTRA_FULL_VIDEO, false)) openFullVideo = true
         // Video to'liq ekranda turganda "Bosh ekran" bosildi — X kabi kichik oynaga qaytaramiz
         else if (FullVideoActivity.Link.current != null) FullVideoActivity.Link.close()
@@ -41,11 +43,20 @@ class MainActivity : Activity() {
         if (openFullVideo) {
             openFullVideo = false
             if (FullVideoActivity.Link.web != null) {
-                startActivity(Intent(this, FullVideoActivity::class.java))
+                // Video alohida, butun ekranli vazifada (task) ochiladi — bo'lingan ekrandan tashqarida
+                Diag.log("Bosh ekran: to'liq ekranli video oynasi ochilmoqda (multiWindow=${if (android.os.Build.VERSION.SDK_INT >= 24) isInMultiWindowMode else false})")
+                try {
+                    startActivity(
+                        Intent(this, FullVideoActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                    )
+                } catch (e: Exception) {
+                    Diag.log("XATO: video oynasi ochilmadi: $e")
+                }
                 @Suppress("DEPRECATION")
                 overridePendingTransition(0, 0)
                 return
-            }
+            } else Diag.log("Bosh ekran: video topilmadi (Link.web=null)")
         }
         startActivity(
             Intent(this, DashActivity::class.java)

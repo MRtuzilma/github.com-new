@@ -25,6 +25,8 @@ class VolumeSwipeLayout @JvmOverloads constructor(
         fun onBrightnessSwipeStart() {}
         fun onBrightnessStep(delta: Int) {}
         fun onBrightnessSwipeEnd() {}
+        /** Silliq yorqinlik: [fraction] — boshlanishdan beri barmoq qancha surildi (balandlikka nisbatan, tepaga = musbat). */
+        fun onBrightnessDrag(fraction: Float) {}
     }
 
     var listener: Listener? = null
@@ -44,7 +46,10 @@ class VolumeSwipeLayout @JvmOverloads constructor(
         return false
     }
 
+    private var startY = 0f
+
     private fun begin() {
+        startY = lastY
         brightnessMode = startedOnBrightness()
         if (brightnessMode) listener?.onBrightnessSwipeStart() else listener?.onVolumeSwipeStart()
     }
@@ -98,6 +103,12 @@ class VolumeSwipeLayout @JvmOverloads constructor(
                         lastY = ev.y
                         begin()
                     }
+                    return true
+                }
+                if (brightnessMode) {
+                    // Yorqinlik — har bir harakatda silliq (zinapoyasiz)
+                    val h = (height * 0.75f).coerceAtLeast(1f)
+                    listener?.onBrightnessDrag((startY - ev.y) / h)
                     return true
                 }
                 val moved = lastY - ev.y // tepaga = musbat
