@@ -20,6 +20,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
+import android.view.Gravity
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowInsets
@@ -536,6 +537,7 @@ class DashActivity : Activity() {
         hideSystemBars()
         if (MainActivity.homePending) {
             MainActivity.homePending = false
+            clockOverlay?.visibility = View.GONE
             // Bosh ekrandan qaytdik: planshet oldingi bo'lingan ekranni (siz surgan o'lcham bilan)
             // tiklashi uchun vaqt beramiz. Faqat 3 soniyada ham tiklanmasa — Navigator'ni o'zimiz ochamiz
             // (shoshilib ochsak, planshet tiklayotgan ekranni buzib, o'lchamni 50/50 ga qaytarardi).
@@ -670,10 +672,75 @@ class DashActivity : Activity() {
         when {
             statOverlay.visibility == View.VISIBLE -> closeStat()
             customView != null -> hideCustomView()
+            clockOverlay?.visibility == View.VISIBLE -> hideClockOverlay()
             expanded || expandStage != 0 -> backToNormal()
-            web.canGoBack() -> web.goBack()
-            else -> { /* bosh ekran — yopilmaydi */ }
+            // Bosh ekranda "Orqaga" — YouTube sahifasi orqaga ketmaydi, katta soat ko'rsatiladi
+            // (YouTube ichida orqaga qaytish uchun video ostidagi ◀ tugmasi bor)
+            else -> showClockOverlay()
         }
+    }
+
+    // =================== Katta soat (Orqaga tugmasi) ===================
+
+    private var clockOverlay: FrameLayout? = null
+
+    private fun showClockOverlay() {
+        val ov = clockOverlay ?: buildClockOverlay().also { clockOverlay = it }
+        ov.alpha = 0f
+        ov.visibility = View.VISIBLE
+        ov.bringToFront()
+        ov.animate().alpha(1f).setDuration(220).start()
+    }
+
+    private fun hideClockOverlay() {
+        val ov = clockOverlay ?: return
+        ov.animate().alpha(0f).setDuration(180).withEndAction { ov.visibility = View.GONE }.start()
+    }
+
+    private fun buildClockOverlay(): FrameLayout {
+        val ov = FrameLayout(this)
+        // Qora shaffof parda — ortidan launcher xira ko'rinib turadi
+        ov.setBackgroundColor(0xB8000000.toInt())
+        ov.isClickable = true
+        ov.setOnClickListener { hideClockOverlay() }
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+        }
+        val time = android.widget.TextClock(this).apply {
+            format12Hour = "HH:mm"
+            format24Hour = "HH:mm"
+            setTextColor(0xFFF7F9FC.toInt())
+            typeface = android.graphics.Typeface.create("sans-serif-thin", android.graphics.Typeface.NORMAL)
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            setShadowLayer(dp(18).toFloat(), 0f, 0f, LauncherTheme.withAlpha(pal.accent, 0x90))
+        }
+        val date = android.widget.TextClock(this).apply {
+            format12Hour = "EEEE, d MMMM"
+            format24Hour = "EEEE, d MMMM"
+            setTextColor(LauncherTheme.withAlpha(pal.accent, 0xE0))
+            textSize = 22f
+            gravity = Gravity.CENTER
+        }
+        val hint = TextView(this).apply {
+            text = "Qaytish uchun ekranga bosing"
+            setTextColor(0x88FFFFFF.toInt())
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(18), 0, 0)
+        }
+        col.addView(time)
+        col.addView(date)
+        col.addView(hint)
+        ov.addView(col, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // Soat o'lchami oyna kengligiga moslanadi
+        ov.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            val size = (minOf(v.width / 3.2f, v.height / 2.6f) / resources.displayMetrics.scaledDensity).coerceIn(40f, 220f)
+            if (Math.abs(time.textSize / resources.displayMetrics.scaledDensity - size) > 1f) time.post { time.textSize = size }
+        }
+        (root as ViewGroup).addView(ov, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        return ov
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
