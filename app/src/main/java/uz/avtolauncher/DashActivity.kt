@@ -149,40 +149,37 @@ class DashActivity : Activity() {
          */
         private const val YT_UPNEXT_JS = """
             (function(){
-              if (window.__avtoUN) return; window.__avtoUN = true;
-              var re = /^(keyingisi|keyingi|keyingi video|up next|next up|next|далее|следующее|следующий|следующее видео)\s*[:·]?\s*${'$'}/i;
-              var hide = function(el){
-                el.style.setProperty('display','none','important');
-                el.setAttribute('data-avto-hidden','1');
-              };
-              var floating = function(el){
-                var pos = getComputedStyle(el).position;
-                return pos === 'absolute' || pos === 'fixed' || pos === 'sticky';
+              if (window.__avtoUN2) return; window.__avtoUN2 = true;
+              // Faqat aniq "Keyingisi / Up next" yozuvlari (oddiy "Next" emas — u pleyer tugmalarida ham bor)
+              var re = /^(keyingisi|keyingi video|up next|next up|далее|следующее видео|следующее)\s*[:·]?\s*${'$'}/i;
+              var isControls = function(el){
+                // Pleyer boshqaruv paneli yoki tugmalari bor element hech qachon yashirilmaydi
+                return el.querySelector && el.querySelector('video, .player-controls-content, .player-controls-top, .player-control-play-pause-icon, button[aria-label*="ause"], button[aria-label*="lay"], .ytm-progress-bar, .progress-bar');
               };
               var scan = function(){
                 var vw = window.innerWidth * window.innerHeight;
-                var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
-                var n, found = [];
-                while ((n = w.nextNode())) {
+                var root = document.querySelector('#player-container-id, .player-container, ytm-player') || document.body;
+                var host = root.parentElement || root;
+                var w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, null, false);
+                var n, count = 0;
+                while ((n = w.nextNode()) && count < 400) {
+                  count++;
                   var t = (n.nodeValue || '').trim();
-                  if (t.length > 2 && t.length < 24 && re.test(t)) found.push(n.parentElement);
-                }
-                found.forEach(function(el){
-                  // Video ustida suzib turgan eng katta (lekin ekrandan ancha kichik) ota-elementni topamiz
-                  var target = null, cur = el, depth = 0;
-                  while (cur && cur !== document.body && depth < 8) {
-                    if (cur.tagName === 'VIDEO' || cur.querySelector && cur.querySelector('video')) break;
+                  if (t.length < 4 || t.length > 24 || !re.test(t)) continue;
+                  var cur = n.parentElement, target = null, depth = 0;
+                  while (cur && cur !== host && depth < 6) {
+                    if (isControls(cur)) break;
+                    var pos = getComputedStyle(cur).position;
                     var r = cur.getBoundingClientRect();
-                    if (floating(cur) && r.width * r.height < vw * 0.5) target = cur;
+                    if ((pos === 'absolute' || pos === 'fixed') && r.width * r.height < vw * 0.2) target = cur;
                     cur = cur.parentElement; depth++;
                   }
-                  if (target) hide(target);
-                });
+                  if (target) target.style.setProperty('display', 'none', 'important');
+                }
               };
-              var t = 0;
-              var later = function(){ if (t) return; t = setTimeout(function(){ t = 0; try { scan(); } catch(e) {} }, 400); };
-              try { new MutationObserver(later).observe(document.documentElement, {childList: true, subtree: true, characterData: true}); } catch(e) {}
-              later();
+              // Yengil tekshiruv: har 3 soniyada bir marta (video o'ynashiga xalaqit bermaydi)
+              setInterval(function(){ try { scan(); } catch(e) {} }, 3000);
+              setTimeout(function(){ try { scan(); } catch(e) {} }, 800);
             })()
         """
 
@@ -700,7 +697,7 @@ class DashActivity : Activity() {
     private fun buildClockOverlay(): FrameLayout {
         val ov = FrameLayout(this)
         // Qora shaffof parda — ortidan launcher xira ko'rinib turadi
-        ov.setBackgroundColor(0xB8000000.toInt())
+        ov.setBackgroundColor(0xE6000000.toInt())
         ov.isClickable = true
         ov.setOnClickListener { hideClockOverlay() }
         val col = LinearLayout(this).apply {
