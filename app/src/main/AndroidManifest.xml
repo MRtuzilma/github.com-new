@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Ekran yorqinligini butun planshet uchun o'zgartirish -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <!-- Android 11+ : o'rnatilgan ilovalar ro'yxatini ko'rish uchun -->
@@ -61,6 +63,13 @@
             android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:taskAffinity="uz.avtolauncher.dash" />
+
+        <!-- Texnik xizmat daftarchasi -->
+        <activity
+            android:name=".ServiceActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
         <!-- YouTube'ning haqiqiy to'liq ekrani (holat qatori va pastki panelsiz) -->
         <activity

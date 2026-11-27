@@ -3,6 +3,7 @@ package uz.avtolauncher
 import android.content.Context
 import android.util.AttributeSet
 import android.view.MotionEvent
+import android.view.View
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import kotlin.math.abs
@@ -20,9 +21,39 @@ class VolumeSwipeLayout @JvmOverloads constructor(
         fun onVolumeSwipeStart()
         fun onVolumeStep(delta: Int)
         fun onVolumeSwipeEnd()
+        /** Spidometr ustida surilganda — ekran yorqinligi. */
+        fun onBrightnessSwipeStart() {}
+        fun onBrightnessStep(delta: Int) {}
+        fun onBrightnessSwipeEnd() {}
     }
 
     var listener: Listener? = null
+
+    /** Shu element ustida boshlangan surish yorqinlikni boshqaradi (qolgan joyda — ovozni). */
+    var brightnessArea: View? = null
+    private var brightnessMode = false
+    private val areaRect = android.graphics.Rect()
+
+    private fun startedOnBrightness(): Boolean {
+        val a = brightnessArea ?: return false
+        if (!a.isShown) return false
+        a.getDrawingRect(areaRect)
+        offsetDescendantRectToMyCoords(a, areaRect)
+        return areaRect.contains(downX.toInt(), downY.toInt())
+    }
+
+    private fun begin() {
+        brightnessMode = startedOnBrightness()
+        if (brightnessMode) listener?.onBrightnessSwipeStart() else listener?.onVolumeSwipeStart()
+    }
+
+    private fun step(n: Int) {
+        if (brightnessMode) listener?.onBrightnessStep(n) else listener?.onVolumeStep(n)
+    }
+
+    private fun end() {
+        if (brightnessMode) listener?.onBrightnessSwipeEnd() else listener?.onVolumeSwipeEnd()
+    }
 
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private val stepPx = 26f * resources.displayMetrics.density
@@ -46,7 +77,7 @@ class VolumeSwipeLayout @JvmOverloads constructor(
                     dragging = true
                     lastY = ev.y
                     parent?.requestDisallowInterceptTouchEvent(true)
-                    listener?.onVolumeSwipeStart()
+                    begin()
                     return true
                 }
             }
@@ -63,20 +94,20 @@ class VolumeSwipeLayout @JvmOverloads constructor(
                     if (dy > slop * 1.5f) {
                         dragging = true
                         lastY = ev.y
-                        listener?.onVolumeSwipeStart()
+                        begin()
                     }
                     return true
                 }
                 val moved = lastY - ev.y // tepaga = musbat
                 val steps = (moved / stepPx).toInt()
                 if (steps != 0) {
-                    listener?.onVolumeStep(steps)
+                    step(steps)
                     lastY -= steps * stepPx
                 }
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (dragging) listener?.onVolumeSwipeEnd()
+                if (dragging) end()
                 dragging = false
                 return true
             }

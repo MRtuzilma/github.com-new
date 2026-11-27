@@ -59,6 +59,11 @@ object Trip {
     /** Oxirgi safar qachon boshlangan (ms). */
     fun tripStart(ctx: Context) = prefs(ctx).getLong("trip_start", 0L)
 
+    /** Mashina Bluetooth'i uzilganda: oxirgi nuqtani unutamiz (qayta ulanganda "sakrash" bo'lmasin). */
+    fun pause() {
+        last = null
+    }
+
     fun onLocation(ctx: Context, loc: Location) {
         // Mashina 30 daqiqadan ko'p turgan bo'lsa (o'chirilgan) — yangi safar boshlanadi
         val p0 = prefs(ctx)

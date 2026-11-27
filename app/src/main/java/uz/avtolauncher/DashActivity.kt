@@ -407,6 +407,7 @@ class DashActivity : Activity() {
         btnPlay.setOnClickListener { mediaPlayPause() }
         btnTheme.setOnClickListener { showThemeMenu() }
         infoSwipe.listener = volumeListener
+        infoSwipe.brightnessArea = gaugeHolder // spidometr ustida surish — yorqinlik
 
         setupVideo(savedInstanceState)
         setupSession()
@@ -460,6 +461,8 @@ class DashActivity : Activity() {
         else registerReceiver(stateReceiver, sf)
         updateDate()
         handler.post(statsTick)
+        val b = prefs().getFloat("brightness", -1f)
+        if (b >= 0f && !canWriteSettings()) window.attributes = window.attributes.apply { screenBrightness = b }
     }
 
     override fun onResume() {
@@ -468,6 +471,7 @@ class DashActivity : Activity() {
         refreshWeatherIfNeeded()
         updateStatus()
         updateTripStats()
+        handler.postDelayed({ if (!isFinishing) checkService() }, 1500)
         if (waitingForSplit) {
             // Ekran bo'linishi bir lahza kechikishi mumkin — darhol emas, 2 soniyadan keyin tekshiramiz
             handler.postDelayed({
@@ -705,7 +709,8 @@ class DashActivity : Activity() {
             "🏠  Hozirgi joyni Uy deb saqlash",
             "💼  Hozirgi joyni Ish deb saqlash",
             "🧭  Navigator'ni yonida ochish",
-            "🔄  Safar hisobini nolga tushirish"
+            "🔄  Safar hisobini nolga tushirish",
+            "🔧  Texnik xizmat daftarchasi"
         )
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Sozlamalar")
@@ -739,6 +744,7 @@ class DashActivity : Activity() {
                             updateTripStats()
                         }
                         .setNegativeButton("Yo'q", null).show()
+                    7 -> Slots.open(this, Slots.SERVICE)
                 }
             }
             .show()
@@ -780,6 +786,39 @@ class DashActivity : Activity() {
         }
     }
 
+    // =================== Texnik xizmat ogohlantirishi ===================
+
+    private var lastServiceLevel = -1
+
+    /** Moy almashtirish vaqti yaqinlashsa yoki kelsa — ogohlantiradi. */
+    private fun checkService() {
+        val level = Service.oilLevel(this)
+        if (level != lastServiceLevel) {
+            lastServiceLevel = level
+            buildDock() // kalit belgisi rangi yangilanadi
+        }
+        if (!Service.shouldWarn(this, level)) return
+        val rem = Service.oilRemaining(this) ?: return
+        if (level == 2) {
+            try {
+                if (tone == null) tone = android.media.ToneGenerator(AudioManager.STREAM_MUSIC, 90)
+                tone?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 500)
+            } catch (e: Exception) {
+            }
+            AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("🛢 Moy almashtirish vaqti keldi!")
+                .setMessage(
+                    if (rem < 0) "Belgilangan probegdan ${-rem} km o'tib ketdi. Iltimos, moyni almashtiring."
+                    else "Belgilangan probegga yetildi. Iltimos, moyni almashtiring."
+                )
+                .setPositiveButton("Daftarchani ochish") { _, _ -> Slots.open(this, Slots.SERVICE) }
+                .setNegativeButton("Keyinroq", null)
+                .show()
+        } else {
+            Toast.makeText(this, "🛢 Moy almashtirishga $rem km qoldi", Toast.LENGTH_LONG).show()
+        }
+    }
+
     // =================== Uy / Ish manzili ===================
 
     private fun savePlaceHere(key: String) {
@@ -814,7 +853,17 @@ class DashActivity : Activity() {
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 val pad = dp(if (Slots.isBuiltin(key)) 19 else 15)
                 setPadding(pad, pad, pad, pad)
-                imageTintList = if (Slots.isBuiltin(key)) LauncherTheme.tint(pal.accent) else null
+                imageTintList = when {
+                    key == Slots.SERVICE -> LauncherTheme.tint(
+                        when (Service.oilLevel(this@DashActivity)) {
+                            2 -> 0xFFFF5468.toInt()
+                            1 -> 0xFFFFA62B.toInt()
+                            else -> pal.accent
+                        }
+                    )
+                    Slots.isBuiltin(key) -> LauncherTheme.tint(pal.accent)
+                    else -> null
+                }
                 isClickable = true
                 isFocusable = true
                 contentDescription = Slots.label(this@DashActivity, key)
@@ -898,9 +947,30 @@ class DashActivity : Activity() {
         override fun onVolumeSwipeStart() {
             handler.removeCallbacks(hideVolume)
             volumeOverlay.animate().cancel()
+            volumeOverlay.label = "OVOZ"
             volumeOverlay.alpha = 1f
             volumeOverlay.visibility = View.VISIBLE
             showVolumeLevel()
+        }
+
+        // ---- Spidometr ustida surish: ekran yorqinligi ----
+        override fun onBrightnessSwipeStart() {
+            handler.removeCallbacks(hideVolume)
+            volumeOverlay.animate().cancel()
+            volumeOverlay.label = "YORUG'LIK"
+            volumeOverlay.alpha = 1f
+            volumeOverlay.visibility = View.VISIBLE
+            volumeOverlay.setLevel((currentBrightness() * 100).toInt(), 100)
+        }
+
+        override fun onBrightnessStep(delta: Int) {
+            setBrightness(currentBrightness() + delta * 0.05f)
+            volumeOverlay.setLevel((currentBrightness() * 100).toInt(), 100)
+        }
+
+        override fun onBrightnessSwipeEnd() {
+            handler.postDelayed(hideVolume, 1200)
+            askWriteSettingsOnce()
         }
 
         override fun onVolumeStep(delta: Int) {
@@ -919,6 +989,69 @@ class DashActivity : Activity() {
         override fun onVolumeSwipeEnd() {
             handler.postDelayed(hideVolume, 1200)
         }
+    }
+
+    // =================== Ekran yorqinligi ===================
+
+    private fun canWriteSettings() = Build.VERSION.SDK_INT < 23 || android.provider.Settings.System.canWrite(this)
+
+    /** Joriy yorqinlik 0..1 (saqlangan qiymat yoki tizimniki). */
+    private fun currentBrightness(): Float {
+        val saved = prefs().getFloat("brightness", -1f)
+        if (saved >= 0f) return saved
+        return try {
+            android.provider.Settings.System.getInt(contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS) / 255f
+        } catch (e: Exception) {
+            0.6f
+        }
+    }
+
+    /**
+     * Ruxsat bo'lsa — butun planshet yorqinligi (tizim sozlamasi) o'zgaradi;
+     * ruxsat bo'lmasa — launcher oynasi ochiq paytdagi yorqinlik.
+     */
+    private fun setBrightness(level: Float) {
+        val v = level.coerceIn(0.03f, 1f)
+        prefs().edit().putFloat("brightness", v).apply()
+        if (canWriteSettings()) {
+            try {
+                android.provider.Settings.System.putInt(
+                    contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE,
+                    android.provider.Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                )
+                android.provider.Settings.System.putInt(
+                    contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS, (v * 255).toInt().coerceIn(3, 255)
+                )
+                window.attributes = window.attributes.apply {
+                    screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                }
+                return
+            } catch (e: Exception) {
+            }
+        }
+        window.attributes = window.attributes.apply { screenBrightness = v }
+    }
+
+    /** Butun planshet uchun yorqinlikni saqlash ruxsati (bir marta so'raladi). */
+    private fun askWriteSettingsOnce() {
+        if (canWriteSettings() || prefs().getBoolean("write_settings_asked", false)) return
+        prefs().edit().putBoolean("write_settings_asked", true).apply()
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("Ekran yorqinligi")
+            .setMessage(
+                "Hozir yorqinlik faqat launcher ochiq turganda o'zgaradi. Butun planshet uchun o'zgarishi " +
+                        "(Navigator va boshqa ilovalarda ham) uchun «Tizim sozlamalarini o'zgartirish» ruxsatini bering."
+            )
+            .setPositiveButton("Ruxsat berish") { _, _ ->
+                try {
+                    startActivity(
+                        Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS, android.net.Uri.parse("package:$packageName"))
+                    )
+                } catch (e: Exception) {
+                }
+            }
+            .setNegativeButton("Keyinroq", null)
+            .show()
     }
 
     private fun showVolumeLevel() {
@@ -943,6 +1076,7 @@ class DashActivity : Activity() {
         chipIcon(wifiChip, if (wifi) R.drawable.ic_wifi else R.drawable.ic_wifi_off, if (wifi) pal.accent else pal.textDim)
         // Bluetooth
         val bt = btState()
+        btConnectedCache = bt == 2
         btChip.text = ""
         btChip.contentDescription = when (bt) { 2 -> "Bluetooth ulangan"; 1 -> "Bluetooth yoqiq"; else -> "Bluetooth o'chiq" }
         chipIcon(btChip, if (bt == 2) R.drawable.ic_bt_connected else R.drawable.ic_bt, if (bt == 2) pal.accent else pal.textDim)
@@ -1016,6 +1150,19 @@ class DashActivity : Activity() {
         }
         updateStatus()
     }
+
+    /**
+     * Mashina Bluetooth'iga ulanganmi. Android 12+ da "Yaqin atrofdagi qurilmalar" ruxsati
+     * berilmagan bo'lsa, buni bilib bo'lmaydi — u holda hisoblashni to'xtatmaymiz.
+     */
+    private fun carConnected(): Boolean {
+        if (Build.VERSION.SDK_INT >= 31 &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+        ) return true
+        return btConnectedCache
+    }
+
+    private var btConnectedCache = false
 
     private fun openSettings(action: String) {
         try {
@@ -1927,7 +2074,11 @@ class DashActivity : Activity() {
             gauge.setSpeed(if (kmh < 2f) 0f else kmh)
             gaugeBig.setSpeed(if (kmh < 2f) 0f else kmh)
             checkSpeed(kmh)
-            Trip.onLocation(applicationContext, location)
+            // Masofa va tezlik statistikasi faqat mashina Bluetooth'iga ulanganda hisoblanadi
+            if (carConnected()) {
+                Trip.onLocation(applicationContext, location)
+                checkService()
+            } else Trip.pause()
             if (tripMode) updateTripStats()
             if (location.hasBearing() && kmh >= 5f) {
                 compassArrow.rotation = location.bearing

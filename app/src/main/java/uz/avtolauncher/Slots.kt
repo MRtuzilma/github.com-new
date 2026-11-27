@@ -16,6 +16,7 @@ object Slots {
     const val SETTINGS = "@settings"
     const val HOME = "@home"
     const val WORK = "@work"
+    const val SERVICE = "@service"
 
     private const val PREFS = "slots"
     private const val SEP = "|"
@@ -49,14 +50,24 @@ object Slots {
     fun dock(ctx: Context): MutableList<String> {
         val p = prefs(ctx)
         val saved = p.getString("dock", null)
-        if (saved != null) return saved.split(SEP).filter { it.isNotEmpty() }.toMutableList()
+        if (saved != null) {
+            val list = saved.split(SEP).filter { it.isNotEmpty() }.toMutableList()
+            // Bir marta: "Texnik xizmat" tugmasini qo'shamiz
+            if (!p.getBoolean("added_service", false)) {
+                if (SERVICE !in list) list.add(SERVICE)
+                p.edit().putBoolean("added_service", true).putString("dock", list.joinToString(SEP)).apply()
+            }
+            return list
+        }
         // Birinchi ishga tushish: o'rnatilgan ilovalardan mosini tanlaymiz
         val list = mutableListOf<String>()
         firstInstalled(ctx, NAV_APPS)?.let { list.add(it) }
         firstInstalled(ctx, MUSIC_APPS)?.let { list.add(it) }
         firstInstalled(ctx, CHAT_APPS)?.let { list.add(it) }
+        list.add(SERVICE)
         list.add(APPS)
         list.add(SETTINGS)
+        p.edit().putBoolean("added_service", true).apply()
         saveDock(ctx, list)
         return list
     }
@@ -72,10 +83,10 @@ object Slots {
         return firstInstalled(ctx, NAV_APPS)
     }
 
-    fun isBuiltin(key: String) = key == APPS || key == SETTINGS || key == HOME || key == WORK
+    fun isBuiltin(key: String) = key == APPS || key == SETTINGS || key == HOME || key == WORK || key == SERVICE
 
     fun isValid(ctx: Context, key: String): Boolean = when (key) {
-        APPS, SETTINGS, HOME, WORK -> true
+        APPS, SETTINGS, HOME, WORK, SERVICE -> true
         "" -> false
         else -> ctx.packageManager.getLaunchIntentForPackage(key) != null
     }
@@ -85,6 +96,7 @@ object Slots {
         SETTINGS -> ctx.getString(R.string.settings)
         HOME -> "Uyga"
         WORK -> "Ishga"
+        SERVICE -> "Texnik xizmat"
         else -> try {
             val pm = ctx.packageManager
             pm.getApplicationLabel(pm.getApplicationInfo(key, 0)).toString()
@@ -98,6 +110,7 @@ object Slots {
         SETTINGS -> ctx.getDrawable(R.drawable.ic_settings)
         HOME -> ctx.getDrawable(R.drawable.ic_home)
         WORK -> ctx.getDrawable(R.drawable.ic_work)
+        SERVICE -> ctx.getDrawable(R.drawable.ic_service)
         else -> try {
             ctx.packageManager.getApplicationIcon(key)
         } catch (e: PackageManager.NameNotFoundException) {
@@ -137,6 +150,13 @@ object Slots {
     }
 
     fun open(ctx: Context, key: String) {
+        if (key == SERVICE) {
+            // Launcher bilan bir oynada ochiladi (Navigator yonida)
+            val i = Intent(ctx, ServiceActivity::class.java)
+            if (ctx !is android.app.Activity) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(i)
+            return
+        }
         if (key == HOME || key == WORK) {
             val i = routeIntent(ctx, key)
             if (i == null) {

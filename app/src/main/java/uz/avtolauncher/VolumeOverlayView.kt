@@ -19,6 +19,12 @@ class VolumeOverlayView @JvmOverloads constructor(
     private var level = 0
     private var max = 15
     private var bg: NeuDrawable? = null
+    /** Pastdagi yozuv: "OVOZ" yoki "YORUG'LIK". */
+    var label = "OVOZ"
+        set(value) {
+            field = value
+            invalidate()
+        }
 
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -87,6 +93,6 @@ class VolumeOverlayView @JvmOverloads constructor(
         canvas.drawText("$pct%", w / 2f, h - m - textSpace * 0.55f + textPaint.textSize * 0.35f, textPaint)
         textPaint.color = pal.textDim
         textPaint.textSize = w * 0.13f
-        canvas.drawText("OVOZ", w / 2f, h - m - textSpace * 0.12f, textPaint)
+        canvas.drawText(label, w / 2f, h - m - textSpace * 0.12f, textPaint)
     }
 }
