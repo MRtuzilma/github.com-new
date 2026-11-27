@@ -491,6 +491,9 @@ class DashActivity : Activity() {
         // Navigator yopilib qolsa — qaytarish
         btnNav.setOnClickListener { bringNavigatorBack() }
         findViewById<ImageButton>(R.id.btnClock).setOnClickListener { showClockOverlay() }
+        // Launcherdagi soat yoki sanaga bosilsa ham — katta soat
+        findViewById<View>(R.id.timeClock).setOnClickListener { showClockOverlay() }
+        findViewById<View>(R.id.dateClock).setOnClickListener { showClockOverlay() }
         btnRestoreNav.setOnClickListener { bringNavigatorBack() }
         // Oddiy ko'rinishga qaytish
         btnRestore.setOnClickListener {
