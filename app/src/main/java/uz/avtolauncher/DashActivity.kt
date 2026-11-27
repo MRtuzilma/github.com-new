@@ -139,8 +139,12 @@ class DashActivity : Activity() {
                 'html.avto-clip.avto-watch .ytp-gradient-bottom, html.avto-clip.avto-watch .ytp-gradient-top,' +
                 'html.avto-clip.avto-watch .ytp-unmute, html.avto-clip.avto-watch .ytm-muted-autoplay-overlay' +
                 '{ display: none !important; }' +
+                /* Video ortidagi sahifa (havolalar) hech qachon bosilmasin */
+                'html.avto-clip.avto-watch #app > *:not(#player-container-id):not(.player-container),' +
+                'html.avto-clip.avto-watch ytm-watch, html.avto-clip.avto-watch ytm-single-column-watch-next-results-renderer' +
+                '{ pointer-events: none !important; }' +
                 'html.avto-clip.avto-watch #player-container-id, html.avto-clip.avto-watch .player-container,' +
-                'html.avto-clip.avto-watch ytm-player { pointer-events: none !important; }' +
+                'html.avto-clip.avto-watch ytm-player { pointer-events: auto !important; }' +
                 /* Yuqori panel yashirilganda (html.avto-hide) — faqat video ko'rinadi */
                 'html.avto-hide ytm-mobile-topbar-renderer, html.avto-hide header.mobile-topbar-header' +
                 '{ display: none !important; }' +
@@ -2215,6 +2219,13 @@ class DashActivity : Activity() {
     @Suppress("UNUSED_PARAMETER")
     private fun setClip(on: Boolean) = applyClip()
 
+    /** Hozir kichik oynada "faqat video" ko'rsatilyaptimi (video sahifasi, tor ko'rinish). */
+    private fun onlyVideoMode(): Boolean {
+        if (expandStage != 0 || webAway || wideLayout) return false
+        val u = web.url ?: return false
+        return u.contains("/watch") || u.contains("/shorts/") || u.contains("/live")
+    }
+
     /** Keng (3 ustunli) ko'rinishda — video ostida keyingi videolar takliflari ko'rinadi. */
     private var wideLayout = false
 
@@ -2660,7 +2671,9 @@ class DashActivity : Activity() {
         web.settings.javaScriptCanOpenWindowsAutomatically = false
         web.setOnTouchListener { _, e ->
             if (e.actionMasked == android.view.MotionEvent.ACTION_DOWN) showVideoButtons()
-            false
+            // "Faqat video" kichik oynada videoga tegish YouTube'ga yetib bormaydi: aks holda ko'rinmas
+            // tugmalar yoki video ortidagi havolalar bosilib ketardi. Tegish faqat launcher tugmalarini ko'rsatadi.
+            onlyVideoMode()
         }
         showVideoButtons()
         web.addJavascriptInterface(Bridge(), "AvtoBridge")
