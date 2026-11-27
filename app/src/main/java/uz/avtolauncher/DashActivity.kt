@@ -279,6 +279,25 @@ class DashActivity : Activity() {
               document.addEventListener('play', function(e){
                 if (isMain(e.target)) { window.__avtoWant = true; wantUrl = location.href; lastPlay = Date.now(); }
               }, true);
+              // Ovozsiz boshlanishga qarshi: YouTube videoni "ovozsiz avtoijro" qilsa — ovozni yoqamiz
+              // (foydalanuvchi o'zi ovozni o'chirgan bo'lsa — tegmaymiz)
+              try {
+                var k = 'yt-player-volume', raw = localStorage.getItem(k);
+                if (raw) {
+                  var o = JSON.parse(raw), d = JSON.parse(o.data);
+                  if (d.muted) { d.muted = false; if (!d.volume) d.volume = 100; o.data = JSON.stringify(d); localStorage.setItem(k, JSON.stringify(o)); }
+                }
+              } catch(e) {}
+              var unmute = function(e){
+                var v = e.target;
+                if (!v || v.tagName !== 'VIDEO' || !v.muted) return;
+                if (!/\/(watch|shorts|live)/.test(location.pathname)) return;
+                if (Date.now() - lastTap < 2000) return; // o'zi bosgan bo'lishi mumkin
+                var btn = document.querySelector('.ytp-unmute, button.ytp-unmute, .ytm-muted-autoplay-overlay button, [class*="unmute"] button, button[class*="unmute"]');
+                if (btn) { try { btn.click(); } catch(x) {} }
+                setTimeout(function(){ if (v.muted) { v.muted = false; if (v.volume < 0.05) v.volume = 1; } }, 150);
+              };
+              ['play','playing','loadeddata','volumechange'].forEach(function(t){ document.addEventListener(t, unmute, true); });
               document.addEventListener('pause', function(e){
                 var v = e.target; if (!isMain(v)) return;
                 if (userPause() || v.ended || wantUrl !== location.href) { window.__avtoWant = false; return; }
@@ -693,14 +712,23 @@ class DashActivity : Activity() {
     private fun showClockOverlay() {
         // Ruxsat bo'lsa — butun planshet ekrani bo'ylab (Navigator, status bar va pastki panel ustida ham)
         if (canOverlay() && showClockWindow()) return
-        if (!canOverlay() && !prefs().getBoolean("asked_clock_overlay", false)) {
-            prefs().edit().putBoolean("asked_clock_overlay", true).apply()
-            Toast.makeText(
-                this,
-                "Soat butun ekranni qoplashi uchun «Boshqa ilovalar ustida ko'rsatish» ruxsatini bering",
-                Toast.LENGTH_LONG
-            ).show()
-            askOverlayPermission()
+        if (!canOverlay()) {
+            Diag.log("Soat: «Boshqa ilovalar ustida» ruxsati yo'q")
+            val n = prefs().getInt("asked_clock_overlay_n", 0)
+            if (n < 5) {
+                prefs().edit().putInt("asked_clock_overlay_n", n + 1).apply()
+                AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                    .setTitle("🕒 Soat butun ekranda")
+                    .setMessage(
+                        "Soat Navigator ustida ham ko'rinishi uchun planshet ruxsati kerak.\n\n" +
+                                "«Ruxsat berish» ni bosing → ochilgan ro'yxatda Avto Launcher → " +
+                                "«Поверх других приложений / Boshqa ilovalar ustida» ni YOQING → orqaga qayting."
+                    )
+                    .setPositiveButton("Ruxsat berish") { _, _ -> openOverlaySettings() }
+                    .setNegativeButton("Keyinroq", null)
+                    .show()
+                return
+            }
         }
         val ov = clockOverlay ?: buildClockOverlay().also {
             clockOverlay = it
@@ -1852,6 +1880,23 @@ class DashActivity : Activity() {
     private var overlayHoldsWeb = false
 
     private fun canOverlay() = Build.VERSION.SDK_INT < 23 || android.provider.Settings.canDrawOverlays(this)
+
+    /** «Boshqa ilovalar ustida» sozlamasini ochish (ba'zi planshetlarda umumiy ro'yxat ochiladi). */
+    private fun openOverlaySettings() {
+        val tries = listOf(
+            Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")),
+            Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION),
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName"))
+        )
+        for (i in tries) {
+            try {
+                startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return
+            } catch (e: Exception) {
+            }
+        }
+        Toast.makeText(this, "Bu planshetda «Boshqa ilovalar ustida» sozlamasi topilmadi", Toast.LENGTH_LONG).show()
+    }
 
     private fun askOverlayPermission() {
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
