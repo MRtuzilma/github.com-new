@@ -1666,8 +1666,18 @@ class DashActivity : Activity() {
                         clockAuto = false
                         hideClockOverlay()
                     }
+                    // Mashina Bluetooth'i ulanmagan bo'lsa — planshet karnayidan musiqa chalinmasin
+                    if (btState() != 2) stopYoutubeSound("ekran bloklandi, Bluetooth ulanmagan")
                 }
-                else -> handler.postDelayed({ checkCarBt() }, 1500)
+                android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY -> {
+                    // Ovoz Bluetooth'dan planshet karnayiga o'tmoqchi — darhol to'xtatamiz
+                    stopYoutubeSound("ovoz karnayga o'tmoqda (Bluetooth uzildi)")
+                    handler.postDelayed({ checkCarBt() }, 1500)
+                }
+                else -> {
+                    handler.postDelayed({ checkCarBt() }, 1500)
+                    handler.postDelayed({ checkCarBt() }, 4500) // ulanish sekin bo'lsa — yana tekshiramiz
+                }
             }
         }
     }
@@ -1677,13 +1687,25 @@ class DashActivity : Activity() {
         val connected = btState() == 2
         if (carWasConnected && !connected) {
             Diag.log("Mashina Bluetooth'i uzildi — katta soat ko'rsatilmoqda")
+            stopYoutubeSound("Bluetooth uzildi")
             clockAuto = true
             showClockOverlay(auto = true)
-        } else if (connected && clockAuto) {
-            clockAuto = false
-            hideClockOverlay()
+        } else if (connected && !carWasConnected) {
+            // Bluetooth qayta ulandi — soat (qaysi yo'l bilan ochilgan bo'lmasin) yopiladi
+            if (clockWindow != null || clockOverlay?.visibility == View.VISIBLE) hideClockOverlay()
         }
         carWasConnected = connected
+    }
+
+    /** YouTube'ni to'xtatish (fon rejimi ham) — Bluetooth uzilganda karnaydan chalinmasligi uchun. */
+    private fun stopYoutubeSound(why: String) {
+        if (!ytPlaying) return
+        Diag.log("YouTube to'xtatildi: $why")
+        ytPause()
+        BgPlayService.playing = false
+        BgPlayService.refresh(this)
+        // Pauza qo'riqchisi qayta yoqib yubormasligi uchun bir oz keyin yana tekshiramiz
+        handler.postDelayed({ if (ytPlaying && btState() != 2) ytPause() }, 1200)
     }
 
     private fun registerCarBt() {
@@ -1693,6 +1715,7 @@ class DashActivity : Activity() {
             addAction(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED)
             addAction("android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED")
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY)
         }
         try {
             if (Build.VERSION.SDK_INT >= 33) registerReceiver(carBtReceiver, f, Context.RECEIVER_EXPORTED)
