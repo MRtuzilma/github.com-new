@@ -63,9 +63,10 @@ class MainActivity : Activity() {
             } else Diag.log("Bosh ekran: video topilmadi (Link.web=null)")
         }
         val now = android.os.SystemClock.uptimeMillis()
-        if (now - lastHome < 1500) return // bir bosishda bir necha marta chaqirilmasin
+        // Ketma-ket tez bosishlarda Navigator'ni qayta tekshirish bir marta (lekin launcher har doim ochiladi —
+        // aks holda qora ekranda qolib ketardi)
+        if (now - lastHome >= 1500) homePending = true
         lastHome = now
-        homePending = true
         // Avval launcherning mavjud oynasini oldinga chiqaramiz: planshet buni qo'llasa, oldingi
         // bo'lingan ekran (siz surib qo'ygan o'lcham bilan) Navigator bilan birga qaytadi.
         // Bo'lmasa — launcher Navigator'ni o'zi yoniga ochadi.

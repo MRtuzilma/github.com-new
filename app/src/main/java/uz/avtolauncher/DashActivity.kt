@@ -1667,7 +1667,7 @@ class DashActivity : Activity() {
                         hideClockOverlay()
                     }
                     // Mashina Bluetooth'i ulanmagan bo'lsa — planshet karnayidan musiqa chalinmasin
-                    if (btState() != 2) stopYoutubeSound("ekran bloklandi, Bluetooth ulanmagan")
+                    if (carAudioSurelyOff()) stopYoutubeSound("ekran bloklandi, Bluetooth ulanmagan")
                 }
                 android.media.AudioManager.ACTION_AUDIO_BECOMING_NOISY -> {
                     // Ovoz Bluetooth'dan planshet karnayiga o'tmoqchi — darhol to'xtatamiz
@@ -1686,26 +1686,50 @@ class DashActivity : Activity() {
         if (isFinishing) return
         val connected = btState() == 2
         if (carWasConnected && !connected) {
-            Diag.log("Mashina Bluetooth'i uzildi — katta soat ko'rsatilmoqda")
+            Diag.log("Mashina Bluetooth'i uzildi — YouTube to'xtatiladi")
             stopYoutubeSound("Bluetooth uzildi")
-            clockAuto = true
-            showClockOverlay(auto = true)
-        } else if (connected && !carWasConnected) {
-            // Bluetooth qayta ulandi — soat (qaysi yo'l bilan ochilgan bo'lmasin) yopiladi
-            if (clockWindow != null || clockOverlay?.visibility == View.VISIBLE) hideClockOverlay()
         }
         carWasConnected = connected
     }
 
     /** YouTube'ni to'xtatish (fon rejimi ham) — Bluetooth uzilganda karnaydan chalinmasligi uchun. */
     private fun stopYoutubeSound(why: String) {
-        if (!ytPlaying) return
-        Diag.log("YouTube to'xtatildi: $why")
-        ytPause()
+        Diag.log("YouTube to'xtatildi: $why (o'ynayotgan edi: $ytPlaying)")
+        hardPause()
+        // YouTube o'zi qayta yoqib yubormasligi uchun yana ikki marta (faqat Bluetooth hali ulanmagan bo'lsa)
+        handler.postDelayed({ if (carAudioSurelyOff()) hardPause() }, 1000)
+        handler.postDelayed({ if (carAudioSurelyOff()) hardPause() }, 3000)
+    }
+
+    /** Mashina (Bluetooth audio) aniq ulanmaganmi? Ruxsat yo'q bo'lib bilib bo'lmasa — false (tegmaymiz). */
+    private fun carAudioSurelyOff(): Boolean = try {
+        @Suppress("DEPRECATION")
+        val a = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+        if (a == null || !a.isEnabled) true
+        else a.getProfileConnectionState(android.bluetooth.BluetoothProfile.A2DP) != android.bluetooth.BluetoothProfile.STATE_CONNECTED &&
+                a.getProfileConnectionState(android.bluetooth.BluetoothProfile.HEADSET) != android.bluetooth.BluetoothProfile.STATE_CONNECTED
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun screenOn(): Boolean = try {
+        (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive
+    } catch (e: Exception) {
+        true
+    }
+
+    /** Sahifadagi barcha videolarni to'xtatadi (pauza qo'riqchisini ham o'chirib). */
+    private fun hardPause() {
+        if (!::web.isInitialized) return
+        web.evaluateJavascript(
+            "(function(){window.__avtoWant=false;var vs=document.querySelectorAll('video');" +
+                    "for(var i=0;i<vs.length;i++){try{vs[i].pause();}catch(e){}}})()", null
+        )
+        ytPlaying = false
+        updatePlayIcon()
+        updateSession()
         BgPlayService.playing = false
         BgPlayService.refresh(this)
-        // Pauza qo'riqchisi qayta yoqib yubormasligi uchun bir oz keyin yana tekshiramiz
-        handler.postDelayed({ if (ytPlaying && btState() != 2) ytPause() }, 1200)
     }
 
     private fun registerCarBt() {
@@ -2456,6 +2480,13 @@ class DashActivity : Activity() {
         @android.webkit.JavascriptInterface
         fun state(playing: Boolean) {
             runOnUiThread {
+                // Himoya: ekran bloklangan va mashina Bluetooth'i ulanmagan bo'lsa — planshet karnayidan
+                // hech qachon chalinmasin (masalan, YouTube o'zi keyingi videoni boshlasa)
+                if (playing && !screenOn() && carAudioSurelyOff()) {
+                    Diag.log("Ekran bloklangan, Bluetooth yo'q — YouTube ijrosi to'xtatildi")
+                    hardPause()
+                    return@runOnUiThread
+                }
                 ytPlaying = playing
                 if (playing) lastSource = "yt"
                 updatePlayIcon()
