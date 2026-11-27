@@ -62,7 +62,9 @@ class AppDrawerActivity : Activity() {
             val list = if (pickMode) {
                 listOf(
                     Entry(getString(R.string.all_apps), Slots.APPS, getDrawable(R.drawable.ic_apps)),
-                    Entry(getString(R.string.settings), Slots.SETTINGS, getDrawable(R.drawable.ic_settings))
+                    Entry(getString(R.string.settings), Slots.SETTINGS, getDrawable(R.drawable.ic_settings)),
+                    Entry("Uyga", Slots.HOME, getDrawable(R.drawable.ic_home)),
+                    Entry("Ishga", Slots.WORK, getDrawable(R.drawable.ic_work))
                 ) + apps
             } else apps
             runOnUiThread {

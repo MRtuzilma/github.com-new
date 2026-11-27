@@ -14,6 +14,8 @@ import android.widget.Toast
 object Slots {
     const val APPS = "@apps"
     const val SETTINGS = "@settings"
+    const val HOME = "@home"
+    const val WORK = "@work"
 
     private const val PREFS = "slots"
     private const val SEP = "|"
@@ -70,10 +72,10 @@ object Slots {
         return firstInstalled(ctx, NAV_APPS)
     }
 
-    fun isBuiltin(key: String) = key == APPS || key == SETTINGS
+    fun isBuiltin(key: String) = key == APPS || key == SETTINGS || key == HOME || key == WORK
 
     fun isValid(ctx: Context, key: String): Boolean = when (key) {
-        APPS, SETTINGS -> true
+        APPS, SETTINGS, HOME, WORK -> true
         "" -> false
         else -> ctx.packageManager.getLaunchIntentForPackage(key) != null
     }
@@ -81,6 +83,8 @@ object Slots {
     fun label(ctx: Context, key: String): String = when (key) {
         APPS -> ctx.getString(R.string.all_apps)
         SETTINGS -> ctx.getString(R.string.settings)
+        HOME -> "Uyga"
+        WORK -> "Ishga"
         else -> try {
             val pm = ctx.packageManager
             pm.getApplicationLabel(pm.getApplicationInfo(key, 0)).toString()
@@ -92,6 +96,8 @@ object Slots {
     fun icon(ctx: Context, key: String): Drawable? = when (key) {
         APPS -> ctx.getDrawable(R.drawable.ic_apps)
         SETTINGS -> ctx.getDrawable(R.drawable.ic_settings)
+        HOME -> ctx.getDrawable(R.drawable.ic_home)
+        WORK -> ctx.getDrawable(R.drawable.ic_work)
         else -> try {
             ctx.packageManager.getApplicationIcon(key)
         } catch (e: PackageManager.NameNotFoundException) {
@@ -99,7 +105,56 @@ object Slots {
         }
     }
 
+    // ---- Saqlangan manzillar (Uy / Ish) ----
+    private fun places(ctx: Context) = ctx.getSharedPreferences("places", Context.MODE_PRIVATE)
+
+    fun savePlace(ctx: Context, key: String, lat: Double, lon: Double) {
+        places(ctx).edit().putString(key, "$lat,$lon").apply()
+        // Dock'da bo'lmasa — boshiga qo'shamiz
+        val list = dock(ctx)
+        if (key !in list) {
+            list.add(0, key)
+            saveDock(ctx, list)
+        }
+    }
+
+    /** Navigator'da shu manzilga marshrut quradi (Yandex Navigator, Yandex Maps yoki Google Maps). */
+    private fun routeIntent(ctx: Context, key: String): Intent? {
+        val v = places(ctx).getString(key, null) ?: return null
+        val lat = v.substringBefore(",")
+        val lon = v.substringAfter(",")
+        val pm = ctx.packageManager
+        val nav = navigatorPackage(ctx)
+        val uri = when (nav) {
+            "ru.yandex.yandexnavi" -> "yandexnavi://build_route_on_map?lat_to=$lat&lon_to=$lon"
+            "ru.yandex.yandexmaps" -> "yandexmaps://maps.yandex.ru/?rtext=~$lat,$lon&rtt=auto"
+            "com.google.android.apps.maps" -> "google.navigation:q=$lat,$lon"
+            else -> "geo:$lat,$lon?q=$lat,$lon"
+        }
+        val i = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(uri))
+        if (nav != null && pm.getLaunchIntentForPackage(nav) != null && nav != "com.waze") i.setPackage(nav)
+        return i
+    }
+
     fun open(ctx: Context, key: String) {
+        if (key == HOME || key == WORK) {
+            val i = routeIntent(ctx, key)
+            if (i == null) {
+                Toast.makeText(
+                    ctx,
+                    "Manzil saqlanmagan. Shu joyda turib, 🎨 → «" + (if (key == HOME) "Hozirgi joyni Uy deb saqlash" else "Hozirgi joyni Ish deb saqlash") + "»ni bosing",
+                    Toast.LENGTH_LONG
+                ).show()
+                return
+            }
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                ctx.startActivity(i)
+            } catch (e: Exception) {
+                Toast.makeText(ctx, R.string.cannot_open, Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
         val intent: Intent? = when (key) {
             APPS -> Intent(ctx, AppDrawerActivity::class.java)
             SETTINGS -> Intent(Settings.ACTION_SETTINGS)

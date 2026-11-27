@@ -85,7 +85,18 @@ class SpeedGaugeView @JvmOverloads constructor(
         }
     }
 
+    /** Tezlik chegarasi (0 — o'rnatilmagan). Chegara yaqinida sariq, oshsa qizil. */
+    var limit = 0
+        set(value) {
+            field = value
+            dynSpeed = -1
+            invalidate()
+        }
+
     private fun colorFor(speed: Float): Int = when {
+        limit > 0 && speed > limit -> Color.parseColor("#FF5468")
+        limit > 0 && speed > limit - 10 -> Color.parseColor("#FFA62B")
+        limit > 0 -> pal.accent
         speed > 120f -> Color.parseColor("#FF5468")
         speed > 90f -> Color.parseColor("#FFA62B")
         else -> pal.accent

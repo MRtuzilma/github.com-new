@@ -348,6 +348,20 @@ class DashActivity : Activity() {
         btChip.setOnClickListener { openSettings(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS) }
         batteryChip.setOnClickListener { showStat("bat") }
         statusText.setOnClickListener { showStat("vol") }
+        // Ovoz tugmachasini bosib tursangiz — ovozni o'chiradi / qaytaradi
+        statusText.setOnLongClickListener {
+            toggleMute()
+            true
+        }
+        // Ob-havoga bosilsa — darhol yangilanadi
+        val weatherTap = View.OnClickListener {
+            getSharedPreferences("weather", Context.MODE_PRIVATE).edit().remove("time").apply()
+            Toast.makeText(this, "Ob-havo yangilanmoqda…", Toast.LENGTH_SHORT).show()
+            refreshWeatherIfNeeded()
+        }
+        weatherIcon.setOnClickListener(weatherTap)
+        weatherTemp.setOnClickListener(weatherTap)
+        weatherDesc.setOnClickListener(weatherTap)
         setupStatOverlay()
         clockInner = findViewById(R.id.clockInner)
         btnTheme = findViewById(R.id.btnTheme)
@@ -454,11 +468,16 @@ class DashActivity : Activity() {
         refreshWeatherIfNeeded()
         updateStatus()
         updateTripStats()
-        if (waitingForSplit && !inMultiWindow) {
-            // Navigator yoniga emas, butun ekranga ochildi — keyingi safar avtomatik urinmaymiz
-            waitingForSplit = false
-            prefs().edit().putBoolean("split_failed", true).apply()
-            showSplitHelp()
+        if (waitingForSplit) {
+            // Ekran bo'linishi bir lahza kechikishi mumkin — darhol emas, 2 soniyadan keyin tekshiramiz
+            handler.postDelayed({
+                if (waitingForSplit && !inMultiWindow && !isFinishing) {
+                    // Navigator yoniga emas, butun ekranga ochildi — keyingi safar avtomatik urinmaymiz
+                    waitingForSplit = false
+                    prefs().edit().putBoolean("split_failed", true).apply()
+                    showSplitHelp()
+                }
+            }, 2000)
         }
     }
 
@@ -490,6 +509,7 @@ class DashActivity : Activity() {
             session?.release()
         } catch (e: Exception) {
         }
+        tone?.release()
         hideCustomView()
         if (overlayHoldsWeb) overlayRoot?.removeView(web)
         removeOverlayWindow()
@@ -630,6 +650,8 @@ class DashActivity : Activity() {
 
         gauge.setPalette(pal)
         gaugeBig.setPalette(pal)
+        gauge.limit = speedLimit()
+        gaugeBig.limit = speedLimit()
         for (b in arrayOf(btnBt, btnBtTrip)) {
             b.background = neu(NeuDrawable.OVAL, 0, 3.5f, NeuDrawable.BUTTON)
             b.setTextColor(pal.accent)
@@ -675,10 +697,15 @@ class DashActivity : Activity() {
     }
 
     private fun showThemeMenu() {
+        val limit = speedLimit()
         val items = arrayOf(
-            "Rang: " + LauncherTheme.ACCENT_NAMES[LauncherTheme.accentIndex(this)],
-            "Rejim: " + LauncherTheme.MODE_NAMES[LauncherTheme.mode(this)],
-            "Navigator'ni yonida ochish"
+            "🎨  Rang: " + LauncherTheme.ACCENT_NAMES[LauncherTheme.accentIndex(this)],
+            "🌓  Rejim: " + LauncherTheme.MODE_NAMES[LauncherTheme.mode(this)],
+            "🚦  Tezlik ogohlantirishi: " + (if (limit == 0) "o'chiq" else "$limit km/soat"),
+            "🏠  Hozirgi joyni Uy deb saqlash",
+            "💼  Hozirgi joyni Ish deb saqlash",
+            "🧭  Navigator'ni yonida ochish",
+            "🔄  Safar hisobini nolga tushirish"
         )
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Sozlamalar")
@@ -698,13 +725,77 @@ class DashActivity : Activity() {
                             applyTheme()
                             d.dismiss()
                         }.show()
-                    2 -> {
+                    2 -> pickSpeedLimit()
+                    3 -> savePlaceHere(Slots.HOME)
+                    4 -> savePlaceHere(Slots.WORK)
+                    5 -> {
                         prefs().edit().putBoolean("split_failed", false).apply()
                         launchNavigatorAdjacent(force = true)
                     }
+                    6 -> AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                        .setMessage("Safar hisobini yangidan boshlaysizmi?")
+                        .setPositiveButton("Ha") { _, _ ->
+                            Trip.reset(this)
+                            updateTripStats()
+                        }
+                        .setNegativeButton("Yo'q", null).show()
                 }
             }
             .show()
+    }
+
+    // =================== Tezlik ogohlantirishi ===================
+
+    private val speedLimits = intArrayOf(0, 40, 60, 70, 80, 90, 100, 110, 120)
+
+    private fun speedLimit() = prefs().getInt("speed_limit", 0)
+
+    private fun pickSpeedLimit() {
+        val names = speedLimits.map { if (it == 0) "O'chiq" else "$it km/soat" }.toTypedArray()
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("Tezlik oshsa ogohlantirish")
+            .setSingleChoiceItems(names, speedLimits.indexOf(speedLimit()).coerceAtLeast(0)) { d, i ->
+                prefs().edit().putInt("speed_limit", speedLimits[i]).apply()
+                gauge.limit = speedLimits[i]
+                gaugeBig.limit = speedLimits[i]
+                d.dismiss()
+            }
+            .show()
+    }
+
+    private var lastWarn = 0L
+    private var tone: android.media.ToneGenerator? = null
+
+    /** Chegaradan oshganda: qisqa signal (har 15 soniyada ko'pi bilan bir marta) va spidometr qizaradi. */
+    private fun checkSpeed(kmh: Float) {
+        val limit = speedLimit()
+        if (limit <= 0 || kmh <= limit + 2) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastWarn < 15_000) return
+        lastWarn = now
+        try {
+            if (tone == null) tone = android.media.ToneGenerator(AudioManager.STREAM_MUSIC, 90)
+            tone?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 400)
+        } catch (e: Exception) {
+        }
+    }
+
+    // =================== Uy / Ish manzili ===================
+
+    private fun savePlaceHere(key: String) {
+        val loc = bestKnownLocation()
+        if (loc == null) {
+            Toast.makeText(this, "Joylashuv hali aniqlanmagan. GPS signalini kuting va qayta urinib ko'ring.", Toast.LENGTH_LONG).show()
+            return
+        }
+        Slots.savePlace(this, key, loc.latitude, loc.longitude)
+        buildDock()
+        Toast.makeText(
+            this,
+            if (key == Slots.HOME) "🏠 Uy manzili saqlandi. Pastdagi «Uyga» tugmasi marshrut quradi."
+            else "💼 Ish manzili saqlandi. Pastdagi «Ishga» tugmasi marshrut quradi.",
+            Toast.LENGTH_LONG
+        ).show()
     }
 
     // =================== Ilova tugmalari (dock) ===================
@@ -905,6 +996,25 @@ class DashActivity : Activity() {
         }
     } catch (e: Exception) {
         0
+    }
+
+    /** Ovozni o'chirish / avvalgi darajaga qaytarish. */
+    private fun toggleMute() {
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val cur = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        try {
+            if (cur > 0) {
+                prefs().edit().putInt("vol_before_mute", cur).apply()
+                audio.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+                Toast.makeText(this, "🔇 Ovoz o'chirildi", Toast.LENGTH_SHORT).show()
+            } else {
+                val back = prefs().getInt("vol_before_mute", max / 2).coerceIn(1, max)
+                audio.setStreamVolume(AudioManager.STREAM_MUSIC, back, 0)
+                Toast.makeText(this, "🔊 Ovoz qaytarildi", Toast.LENGTH_SHORT).show()
+            }
+        } catch (e: SecurityException) {
+        }
+        updateStatus()
     }
 
     private fun openSettings(action: String) {
@@ -1816,6 +1926,7 @@ class DashActivity : Activity() {
             val kmh = if (location.hasSpeed()) location.speed * 3.6f else 0f
             gauge.setSpeed(if (kmh < 2f) 0f else kmh)
             gaugeBig.setSpeed(if (kmh < 2f) 0f else kmh)
+            checkSpeed(kmh)
             Trip.onLocation(applicationContext, location)
             if (tripMode) updateTripStats()
             if (location.hasBearing() && kmh >= 5f) {
