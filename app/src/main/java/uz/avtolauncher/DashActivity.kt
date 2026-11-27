@@ -534,6 +534,11 @@ class DashActivity : Activity() {
     override fun onResume() {
         super.onResume()
         hideSystemBars()
+        if (MainActivity.homePending) {
+            MainActivity.homePending = false
+            // Bosh ekrandan qaytdik: bo'lingan ekran o'zi tiklanmasa — Navigator'ni yoniga ochamiz
+            root.postDelayed({ if (!isFinishing) autoNavigator() }, 900)
+        }
         buildDock()
         refreshWeatherIfNeeded()
         updateStatus()
@@ -1885,6 +1890,8 @@ class DashActivity : Activity() {
     // =================== YouTube nazoratchisi ===================
 
     private var webWatchMisses = 0
+    private var injectUrl = ""
+    private var injectStep = 0
 
     /**
      * Har 20 soniyada (va launcherga qaytganda) YouTube sahifasi tirikligini tekshiradi:
@@ -2369,8 +2376,16 @@ class DashActivity : Activity() {
 
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 super.onProgressChanged(view, newProgress)
-                if (newProgress in 10..100) view.evaluateJavascript(KEEP_VISIBLE_JS, null)
-                if (newProgress >= 50) {
+                // Skriptlarni har bir foizda emas, sahifa yuklanishida 2 marta yuboramiz (qotmaslik uchun)
+                val step = if (newProgress >= 80) 2 else if (newProgress >= 10) 1 else 0
+                val u = view.url ?: ""
+                if (u != injectUrl) {
+                    injectUrl = u
+                    injectStep = 0
+                }
+                if (step > injectStep) {
+                    injectStep = step
+                    view.evaluateJavascript(KEEP_VISIBLE_JS, null)
                     view.evaluateJavascript(YT_CSS_JS, null)
                     view.evaluateJavascript(YT_UPNEXT_JS, null)
                 }
@@ -2432,7 +2447,9 @@ class DashActivity : Activity() {
 
     /** Home bosilganda: Navigator hali yonida bo'lmasa, uni yoniga ochamiz. */
     private fun autoNavigator() {
-        if (inMultiWindow) return
+        // Holatni joyida tekshiramiz (saqlangan qiymat kechikishi mumkin)
+        val mw = if (Build.VERSION.SDK_INT >= 24) isInMultiWindowMode else false
+        if (inMultiWindow || mw || waitingForSplit) return
         if (prefs().getBoolean("split_failed", false)) return
         launchNavigatorAdjacent(force = false)
     }

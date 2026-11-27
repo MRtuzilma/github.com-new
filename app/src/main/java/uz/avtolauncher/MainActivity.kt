@@ -18,6 +18,10 @@ class MainActivity : Activity() {
 
         /** Mashinadagi "qo'ng'iroqni qabul qilish" tugmasi (qo'ng'iroq yo'q paytda) — DashActivity shu yerda tinglaydi. */
         var carKey: (() -> Unit)? = null
+
+        /** "Bosh ekran" bosildi — launcher Navigator yonida turganini tekshirishi kerak. */
+        @Volatile
+        var homePending = false
     }
 
     private var openFullVideo = false
@@ -58,13 +62,37 @@ class MainActivity : Activity() {
                 return
             } else Diag.log("Bosh ekran: video topilmadi (Link.web=null)")
         }
-        startActivity(
-            Intent(this, DashActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra(DashActivity.EXTRA_START_NAV, true)
-        )
+        homePending = true
+        // Avval launcherning mavjud oynasini oldinga chiqaramiz: planshet buni qo'llasa, oldingi
+        // bo'lingan ekran (siz surib qo'ygan o'lcham bilan) Navigator bilan birga qaytadi.
+        // Bo'lmasa — launcher Navigator'ni o'zi yoniga ochadi.
+        if (!bringDashToFront()) {
+            startActivity(
+                Intent(this, DashActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .putExtra(DashActivity.EXTRA_START_NAV, true)
+            )
+        }
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
+    }
+
+    private fun bringDashToFront(): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < 23) return false
+        return try {
+            val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+            val task = am.appTasks.firstOrNull { t ->
+                val info = t.taskInfo
+                info.baseActivity?.className == DashActivity::class.java.name ||
+                        info.topActivity?.className == DashActivity::class.java.name
+            } ?: return false
+            task.moveToFront()
+            Diag.log("Bosh ekran: launcher oynasi oldinga chiqarildi")
+            true
+        } catch (e: Exception) {
+            Diag.log("Bosh ekran: oynani oldinga chiqarib bo'lmadi: $e")
+            false
+        }
     }
 
     @Deprecated("Launcher — orqaga tugmasi hech narsa qilmaydi")
