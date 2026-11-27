@@ -418,6 +418,7 @@ class DashActivity : Activity() {
         web = findViewById(R.id.web)
         watchSystemBars()
         MainActivity.carKey = { runOnUiThread { carKeyToggle() } }
+        root.post { registerCarBt() }
         (web as? BgWebView)?.keepAlive = { bgPlayEnabled() && ytPlaying }
         dashControls = VideoControls(this, { web }, YT_PREV_JS, YT_NEXT_JS, YT_PLAY_JS, YT_PAUSE_JS).also {
             it.visibility = View.GONE
@@ -492,7 +493,10 @@ class DashActivity : Activity() {
         btnNav.setOnClickListener { bringNavigatorBack() }
         findViewById<ImageButton>(R.id.btnClock).setOnClickListener { showClockOverlay() }
         // Launcherdagi soat yoki sanaga bosilsa ham — katta soat
+        // Soat kartasining istalgan joyiga bosilsa (tugmalardan tashqari) — katta soat
         findViewById<View>(R.id.timeClock).setOnClickListener { showClockOverlay() }
+        clockCard.setOnClickListener { showClockOverlay() }
+        findViewById<View>(R.id.clockInner)?.setOnClickListener { showClockOverlay() }
         findViewById<View>(R.id.dateClock).setOnClickListener { showClockOverlay() }
         btnRestoreNav.setOnClickListener { bringNavigatorBack() }
         // Oddiy ko'rinishga qaytish
@@ -643,6 +647,10 @@ class DashActivity : Activity() {
         if (webAway) FullVideoActivity.Link.close()
         stopGps()
         handler.removeCallbacks(webWatch)
+        try {
+            unregisterReceiver(carBtReceiver)
+        } catch (e: Exception) {
+        }
         clockWindow?.let {
             try {
                 (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
@@ -739,10 +747,10 @@ class DashActivity : Activity() {
     private var dashControls: VideoControls? = null
     private var clockWindow: FrameLayout? = null
 
-    private fun showClockOverlay() {
+    private fun showClockOverlay(auto: Boolean = false) {
         // Ruxsat bo'lsa — butun planshet ekrani bo'ylab (Navigator, status bar va pastki panel ustida ham)
         if (canOverlay() && showClockWindow()) return
-        if (!canOverlay()) {
+        if (!canOverlay() && !auto) {
             Diag.log("Soat: «Boshqa ilovalar ustida» ruxsati yo'q")
             val n = prefs().getInt("asked_clock_overlay_n", 0)
             if (n < 5) {
@@ -834,6 +842,7 @@ class DashActivity : Activity() {
     }
 
     private fun hideClockOverlay() {
+        clockAuto = false
         clockWindow?.let { w ->
             clockWindow = null
             w.animate().alpha(0f).setDuration(180).withEndAction {
@@ -1638,6 +1647,61 @@ class DashActivity : Activity() {
     }
 
     /** Wi-Fi, Bluetooth va ovoz o'zgarganda tugmachalar yangilanadi. */
+    // =================== Mashina Bluetooth'i uzilganda — katta soat ===================
+
+    private var carWasConnected = false
+    private var clockAuto = false
+
+    /**
+     * Launcher yopiq turganda ham ishlaydi (onCreate → onDestroy).
+     * Mashina Bluetooth'i uzilsa — shaffof fonli katta soat o'zi chiqadi va ekran
+     * BT Ekran ilovasi tomonidan bloklanguncha (ekran o'chguncha) turadi.
+     */
+    private val carBtReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    // Ekran bloklandi — avtomatik soat vazifasini bajardi
+                    if (clockAuto) {
+                        clockAuto = false
+                        hideClockOverlay()
+                    }
+                }
+                else -> handler.postDelayed({ checkCarBt() }, 1500)
+            }
+        }
+    }
+
+    private fun checkCarBt() {
+        if (isFinishing) return
+        val connected = btState() == 2
+        if (carWasConnected && !connected) {
+            Diag.log("Mashina Bluetooth'i uzildi — katta soat ko'rsatilmoqda")
+            clockAuto = true
+            showClockOverlay(auto = true)
+        } else if (connected && clockAuto) {
+            clockAuto = false
+            hideClockOverlay()
+        }
+        carWasConnected = connected
+    }
+
+    private fun registerCarBt() {
+        val f = IntentFilter().apply {
+            addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            addAction(android.bluetooth.BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction("android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED")
+            addAction(Intent.ACTION_SCREEN_OFF)
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(carBtReceiver, f, Context.RECEIVER_EXPORTED)
+            else registerReceiver(carBtReceiver, f)
+        } catch (e: Exception) {
+        }
+        carWasConnected = try { btState() == 2 } catch (e: Exception) { false }
+    }
+
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             root.postDelayed({
