@@ -502,6 +502,8 @@ class DashActivity : Activity() {
         else registerReceiver(batteryReceiver, filter)
         handler.post(themeCheck)
         web.onResume()
+        web.resumeTimers()
+        handler.postDelayed(webWatch, 4000)
         BgPlayService.stop(this) // launcher ko'rinib turibdi — fon xizmati kerak emas
         val tf = IntentFilter().apply {
             addAction(Intent.ACTION_TIME_TICK)
@@ -551,8 +553,10 @@ class DashActivity : Activity() {
     }
 
     override fun onStop() {
-        stopGps()
+        // GPS to'xtatilmaydi: video butun ekranda yoki boshqa ilova ochiq bo'lsa ham
+        // tezlik va masofa hisoblanib turadi (launcher qaytganda spidometr darhol ishlaydi)
         handler.removeCallbacks(themeCheck)
+        handler.removeCallbacks(webWatch)
         try {
             unregisterReceiver(batteryReceiver)
         } catch (e: IllegalArgumentException) {
@@ -581,6 +585,8 @@ class DashActivity : Activity() {
 
     override fun onDestroy() {
         if (webAway) FullVideoActivity.Link.close()
+        stopGps()
+        handler.removeCallbacks(webWatch)
         BgPlayService.control = null
         BgPlayService.stop(this)
         MainActivity.carKey = null
@@ -657,7 +663,7 @@ class DashActivity : Activity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        web.saveState(outState)
+        // WebView holati saqlanmaydi: qayta tiklanganda ba'zan sahifa qora bo'lib qolardi
     }
 
     private fun hideSystemBars() {
@@ -1789,6 +1795,7 @@ class DashActivity : Activity() {
                 syncYtFs(false)
                 setClip(false)
                 web.onResume()
+                wakeVideoSurface()
                 if (playing || ytPlaying) keepPlaying()
             }
             expandStage = 2
@@ -1873,6 +1880,79 @@ class DashActivity : Activity() {
             1 -> enterFull()
             else -> backToNormal()
         }
+    }
+
+    // =================== YouTube nazoratchisi ===================
+
+    private var webWatchMisses = 0
+
+    /**
+     * Har 20 soniyada (va launcherga qaytganda) YouTube sahifasi tirikligini tekshiradi:
+     * javob bermasa yoki sahifa bo'm-bo'sh (qora) bo'lib qolsa — o'zi qayta yuklaydi.
+     */
+    private val webWatch = object : Runnable {
+        override fun run() {
+            handler.removeCallbacks(this)
+            if (isFinishing || webAway || web.url == null) {
+                handler.postDelayed(this, 20_000)
+                return
+            }
+            var answered = false
+            web.evaluateJavascript(
+                "(function(){var b=document.body;return document.readyState+'|'+(b?b.childElementCount:0)+'|'+(b?b.innerText.length:0);})()"
+            ) { r ->
+                answered = true
+                val parts = (r ?: "").trim('"').split("|")
+                val blank = parts.size == 3 && parts[0] == "complete" && (parts[1].toIntOrNull() ?: 1) == 0
+                if (blank) {
+                    Diag.log("YouTube sahifasi bo'sh — qayta yuklanmoqda")
+                    web.reload()
+                }
+                webWatchMisses = 0
+            }
+            handler.postDelayed({
+                if (!answered && !webAway && !isFinishing) {
+                    webWatchMisses++
+                    Diag.log("YouTube javob bermadi ($webWatchMisses)")
+                    if (webWatchMisses >= 2) {
+                        webWatchMisses = 0
+                        rebuildWeb()
+                    } else {
+                        web.onResume()
+                        web.resumeTimers()
+                    }
+                }
+            }, 5000)
+            handler.postDelayed(this, 20_000)
+        }
+    }
+
+    /** YouTube qotib qolganda: WebView'ni to'xtatib, sahifani toza holda qayta yuklaymiz. */
+    private fun rebuildWeb() {
+        if (isFinishing || webAway) return
+        try {
+            val url = prefs().getString("url", YT_HOME) ?: YT_HOME
+            web.stopLoading()
+            web.onResume()
+            web.resumeTimers()
+            web.loadUrl(url)
+        } catch (e: Exception) {
+            Diag.log("YouTube'ni qayta yuklab bo'lmadi: $e — launcher qayta ochiladi")
+            recreate()
+        }
+    }
+
+    /** Videoning tasvir qatlami qora bo'lib qolmasligi uchun uni "uyg'otamiz". */
+    private fun wakeVideoSurface() {
+        web.resumeTimers()
+        web.requestLayout()
+        web.invalidate()
+        handler.postDelayed({
+            web.evaluateJavascript(
+                "(function(){var v=document.querySelector('video');if(v&&v.readyState>0){var p=v.paused;v.style.transform='translateZ(0)';setTimeout(function(){v.style.transform='';},50);if(!p)v.play().catch(function(){});}window.dispatchEvent(new Event('resize'));})()",
+                null
+            )
+        }, 300)
     }
 
     /** Faqat video klipni ko'rsatish (YouTube sahifasining qolgan qismi yashiriladi). */
@@ -2229,6 +2309,13 @@ class DashActivity : Activity() {
                 return scheme != "http" && scheme != "https"
             }
 
+            /** YouTube jarayoni xotira yetmay o'chib qolsa — ilova yopilmaydi, YouTube qaytadan yuklanadi. */
+            override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                Diag.log("YouTube jarayoni to'xtadi (xotira?) — qayta yuklanadi")
+                handler.post { rebuildWeb() }
+                return true
+            }
+
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
                 super.onReceivedError(view, request, error)
                 // Asosiy sahifa internet yo'qligi sababli ochilmadi — internet qaytganda qayta yuklaymiz
@@ -2301,7 +2388,6 @@ class DashActivity : Activity() {
         showVideoButtons()
         web.addJavascriptInterface(Bridge(), "AvtoBridge")
         web.setBackgroundColor(0xFF000000.toInt())
-        if (state != null) web.restoreState(state)
         // YouTube sahifasini biroz keyin yuklaymiz: avval launcher chiziladi va Navigator yonma-yon
         // ochiladi — ikkalasi bir vaqtda bo'lsa, ochilishda qotish sezilardi
         if (web.url == null) {
@@ -2406,6 +2492,11 @@ class DashActivity : Activity() {
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
+            // Zaxira manbadan faqat GPS ma'lumotlari (tarmoq joylashuvida tezlik yo'q)
+            if (location.provider != LocationManager.GPS_PROVIDER) return
+            // Bir xil nuqta ikki manbadan kelsa — bittasini olamiz
+            lastLocation?.let { if (it.time == location.time) return }
+            gpsRetries = 0
             val firstFix = lastLocation == null
             lastLocation = location
             val kmh = if (location.hasSpeed()) location.speed * 3.6f else 0f
@@ -2443,11 +2534,25 @@ class DashActivity : Activity() {
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
     }
 
+    private var gpsRetries = 0
+
     private val gpsTimeout = Runnable {
         gauge.setSpeed(0f)
         gaugeBig.setSpeed(0f)
         gpsHint.setText(R.string.gps_wait)
         gpsHint.visibility = View.VISIBLE
+        handler.postDelayed(gpsRevive, 15_000)
+    }
+
+    /** GPS uzoq vaqt jim bo'lsa — kuzatuvchini qaytadan ulaymiz (planshet GPS'i "qotib" qolganda). */
+    private val gpsRevive = Runnable {
+        if (isFinishing) return@Runnable
+        val last = lastLocation?.time ?: 0L
+        if (System.currentTimeMillis() - last > 15_000) {
+            gpsRetries++
+            Diag.log("GPS javob bermayapti — qayta ulanmoqda ($gpsRetries)")
+            startGps()
+        }
     }
 
     /** GPS o'chiq bo'lsa — buni aytamiz va bosilganda joylashuv sozlamalarini ochamiz. */
@@ -2469,12 +2574,19 @@ class DashActivity : Activity() {
             lm.removeUpdates(locationListener)
             if (lm.allProviders.contains(LocationManager.GPS_PROVIDER)) {
                 lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 500L, 0f, locationListener, Looper.getMainLooper())
+                // Zaxira: boshqa ilova (masalan, Yandex Navigator) olgan GPS ma'lumotlarini ham qabul qilamiz —
+                // planshet GPS'i bizga javob bermay qolsa ham spidometr ishlayveradi
+                if (lm.allProviders.contains(LocationManager.PASSIVE_PROVIDER)) {
+                    lm.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 0L, 0f, locationListener, Looper.getMainLooper())
+                }
                 if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                     showGpsDisabled()
                     return
                 }
                 gpsHint.setText(R.string.gps_wait)
                 gpsHint.setOnClickListener(null)
+                handler.removeCallbacks(gpsRevive)
+                if (gpsRetries < 40) handler.postDelayed(gpsRevive, 20_000)
             } else {
                 gpsHint.setText(R.string.gps_off)
             }
@@ -2487,6 +2599,7 @@ class DashActivity : Activity() {
 
     private fun stopGps() {
         handler.removeCallbacks(gpsTimeout)
+        handler.removeCallbacks(gpsRevive)
         try {
             locationManager?.removeUpdates(locationListener)
         } catch (e: Exception) {
