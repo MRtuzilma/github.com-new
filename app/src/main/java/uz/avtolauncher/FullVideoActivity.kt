@@ -139,6 +139,21 @@ class FullVideoActivity : Activity() {
         closeFull()
     }
 
+    /** "Orqaga" tugmasi — X kabi kichik oynaga qaytaradi (WebView tugmani o'zi olib qo'ysa ham). */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (event.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            if (event.action == android.view.KeyEvent.ACTION_UP) closeFull()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    /** "Bosh ekran" yoki "So'nggi ilovalar" tugmasi bosildi — X kabi kichik oynaga qaytamiz. */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        closeFull()
+    }
+
     override fun onDestroy() {
         // Tizim oynani o'zi yopib yuborsa ham video launcherga qaytsin
         if (!closed) {

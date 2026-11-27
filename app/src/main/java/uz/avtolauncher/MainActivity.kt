@@ -29,6 +29,8 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra(EXTRA_FULL_VIDEO, false)) openFullVideo = true
+        // Video to'liq ekranda turganda "Bosh ekran" bosildi — X kabi kichik oynaga qaytaramiz
+        else if (FullVideoActivity.Link.current != null) FullVideoActivity.Link.close()
     }
 
     override fun onResume() {
