@@ -536,8 +536,11 @@ class DashActivity : Activity() {
         hideSystemBars()
         if (MainActivity.homePending) {
             MainActivity.homePending = false
-            // Bosh ekrandan qaytdik: bo'lingan ekran o'zi tiklanmasa — Navigator'ni yoniga ochamiz
-            root.postDelayed({ if (!isFinishing) autoNavigator() }, 900)
+            // Bosh ekrandan qaytdik: planshet oldingi bo'lingan ekranni (siz surgan o'lcham bilan)
+            // tiklashi uchun vaqt beramiz. Faqat 3 soniyada ham tiklanmasa — Navigator'ni o'zimiz ochamiz
+            // (shoshilib ochsak, planshet tiklayotgan ekranni buzib, o'lchamni 50/50 ga qaytarardi).
+            handler.removeCallbacks(homeNavCheck)
+            handler.postDelayed(homeNavCheck, 3000)
         }
         buildDock()
         refreshWeatherIfNeeded()
@@ -607,7 +610,14 @@ class DashActivity : Activity() {
         super.onDestroy()
     }
 
+    private val homeNavCheck = Runnable {
+        val mw = if (Build.VERSION.SDK_INT >= 24) isInMultiWindowMode else false
+        Diag.log("Bosh ekrandan keyin: bo'lingan ekran tiklandimi = $mw")
+        if (!mw && !isFinishing) autoNavigator()
+    }
+
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: android.content.res.Configuration) {
+        if (isInMultiWindowMode) handler.removeCallbacks(homeNavCheck)
         Diag.log("Launcher: ekran bo'linishi = $isInMultiWindowMode")
         handler.postDelayed(reHideBars, 500)
         super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)

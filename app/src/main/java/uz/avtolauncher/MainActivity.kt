@@ -62,6 +62,9 @@ class MainActivity : Activity() {
                 return
             } else Diag.log("Bosh ekran: video topilmadi (Link.web=null)")
         }
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastHome < 1500) return // bir bosishda bir necha marta chaqirilmasin
+        lastHome = now
         homePending = true
         // Avval launcherning mavjud oynasini oldinga chiqaramiz: planshet buni qo'llasa, oldingi
         // bo'lingan ekran (siz surib qo'ygan o'lcham bilan) Navigator bilan birga qaytadi.
@@ -76,6 +79,8 @@ class MainActivity : Activity() {
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
     }
+
+    private var lastHome = 0L
 
     private fun bringDashToFront(): Boolean {
         if (android.os.Build.VERSION.SDK_INT < 23) return false
