@@ -65,7 +65,8 @@ class AppDrawerActivity : Activity() {
                     Entry(getString(R.string.settings), Slots.SETTINGS, getDrawable(R.drawable.ic_settings)),
                     Entry("Uyga", Slots.HOME, getDrawable(R.drawable.ic_home)),
                     Entry("Ishga", Slots.WORK, getDrawable(R.drawable.ic_work)),
-                    Entry("Texnik xizmat", Slots.SERVICE, getDrawable(R.drawable.ic_service))
+                    Entry("Texnik xizmat", Slots.SERVICE, getDrawable(R.drawable.ic_service)),
+                    Entry("Ovozli yordamchi", Slots.VOICE, getDrawable(R.drawable.ic_mic))
                 ) + apps
             } else apps
             runOnUiThread {

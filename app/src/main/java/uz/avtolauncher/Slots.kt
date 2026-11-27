@@ -17,6 +17,7 @@ object Slots {
     const val HOME = "@home"
     const val WORK = "@work"
     const val SERVICE = "@service"
+    const val VOICE = "@voice"
 
     private const val PREFS = "slots"
     private const val SEP = "|"
@@ -57,6 +58,11 @@ object Slots {
                 if (SERVICE !in list) list.add(SERVICE)
                 p.edit().putBoolean("added_service", true).putString("dock", list.joinToString(SEP)).apply()
             }
+            // Bir marta: ovozli yordamchi tugmasini boshiga qo'shamiz
+            if (!p.getBoolean("added_voice", false)) {
+                if (VOICE !in list) list.add(0, VOICE)
+                p.edit().putBoolean("added_voice", true).putString("dock", list.joinToString(SEP)).apply()
+            }
             return list
         }
         // Birinchi ishga tushish: o'rnatilgan ilovalardan mosini tanlaymiz
@@ -64,10 +70,11 @@ object Slots {
         firstInstalled(ctx, NAV_APPS)?.let { list.add(it) }
         firstInstalled(ctx, MUSIC_APPS)?.let { list.add(it) }
         firstInstalled(ctx, CHAT_APPS)?.let { list.add(it) }
+        list.add(0, VOICE)
         list.add(SERVICE)
         list.add(APPS)
         list.add(SETTINGS)
-        p.edit().putBoolean("added_service", true).apply()
+        p.edit().putBoolean("added_service", true).putBoolean("added_voice", true).apply()
         saveDock(ctx, list)
         return list
     }
@@ -83,10 +90,10 @@ object Slots {
         return firstInstalled(ctx, NAV_APPS)
     }
 
-    fun isBuiltin(key: String) = key == APPS || key == SETTINGS || key == HOME || key == WORK || key == SERVICE
+    fun isBuiltin(key: String) = key == APPS || key == SETTINGS || key == HOME || key == WORK || key == SERVICE || key == VOICE
 
     fun isValid(ctx: Context, key: String): Boolean = when (key) {
-        APPS, SETTINGS, HOME, WORK, SERVICE -> true
+        APPS, SETTINGS, HOME, WORK, SERVICE, VOICE -> true
         "" -> false
         else -> ctx.packageManager.getLaunchIntentForPackage(key) != null
     }
@@ -97,6 +104,7 @@ object Slots {
         HOME -> "Uyga"
         WORK -> "Ishga"
         SERVICE -> "Texnik xizmat"
+        VOICE -> "Ovozli yordamchi"
         else -> try {
             val pm = ctx.packageManager
             pm.getApplicationLabel(pm.getApplicationInfo(key, 0)).toString()
@@ -111,6 +119,7 @@ object Slots {
         HOME -> ctx.getDrawable(R.drawable.ic_home)
         WORK -> ctx.getDrawable(R.drawable.ic_work)
         SERVICE -> ctx.getDrawable(R.drawable.ic_service)
+        VOICE -> ctx.getDrawable(R.drawable.ic_mic)
         else -> try {
             ctx.packageManager.getApplicationIcon(key)
         } catch (e: PackageManager.NameNotFoundException) {
@@ -150,6 +159,24 @@ object Slots {
     }
 
     fun open(ctx: Context, key: String) {
+        if (key == VOICE) {
+            // Ovozli yordamchi (Google Assistant / Alisa — qaysi biri tanlangan bo'lsa)
+            val tries = listOf(
+                Intent(Intent.ACTION_VOICE_COMMAND),
+                Intent(Intent.ACTION_ASSIST),
+                Intent(android.speech.RecognizerIntent.ACTION_WEB_SEARCH)
+            )
+            for (i in tries) {
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                try {
+                    ctx.startActivity(i)
+                    return
+                } catch (e: Exception) {
+                }
+            }
+            Toast.makeText(ctx, "Ovozli yordamchi topilmadi (Google yoki Yandex ilovasini o'rnating)", Toast.LENGTH_LONG).show()
+            return
+        }
         if (key == SERVICE) {
             // Launcher bilan bir oynada ochiladi (Navigator yonida)
             val i = Intent(ctx, ServiceActivity::class.java)

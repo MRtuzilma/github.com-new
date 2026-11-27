@@ -30,16 +30,18 @@ class VolumeSwipeLayout @JvmOverloads constructor(
     var listener: Listener? = null
 
     /** Shu element ustida boshlangan surish yorqinlikni boshqaradi (qolgan joyda — ovozni). */
-    var brightnessArea: View? = null
+    var brightnessAreas: List<View> = emptyList()
     private var brightnessMode = false
     private val areaRect = android.graphics.Rect()
 
     private fun startedOnBrightness(): Boolean {
-        val a = brightnessArea ?: return false
-        if (!a.isShown) return false
-        a.getDrawingRect(areaRect)
-        offsetDescendantRectToMyCoords(a, areaRect)
-        return areaRect.contains(downX.toInt(), downY.toInt())
+        for (a in brightnessAreas) {
+            if (!a.isShown) continue
+            a.getDrawingRect(areaRect)
+            offsetDescendantRectToMyCoords(a, areaRect)
+            if (areaRect.contains(downX.toInt(), downY.toInt())) return true
+        }
+        return false
     }
 
     private fun begin() {

@@ -407,7 +407,8 @@ class DashActivity : Activity() {
         btnPlay.setOnClickListener { mediaPlayPause() }
         btnTheme.setOnClickListener { showThemeMenu() }
         infoSwipe.listener = volumeListener
-        infoSwipe.brightnessArea = gaugeHolder // spidometr ustida surish — yorqinlik
+        // Spidometr ustida surish — yorqinlik (oddiy va safar rejimida ham)
+        infoSwipe.brightnessAreas = listOf(gaugeHolder, findViewById(R.id.tripGaugeHolder))
 
         setupVideo(savedInstanceState)
         setupSession()
@@ -791,12 +792,16 @@ class DashActivity : Activity() {
     private var lastServiceLevel = -1
 
     /** Moy almashtirish vaqti yaqinlashsa yoki kelsa — ogohlantiradi. */
+    private var serviceDialog: AlertDialog? = null
+
     private fun checkService() {
         val level = Service.oilLevel(this)
         if (level != lastServiceLevel) {
             lastServiceLevel = level
             buildDock() // kalit belgisi rangi yangilanadi
         }
+        // Oyna allaqachon ochiq bo'lsa yoki ekran ko'rinmasa — ogohlantirmaymiz (keyin ko'rsatiladi)
+        if (serviceDialog?.isShowing == true || isFinishing || !hasWindowFocus()) return
         if (!Service.shouldWarn(this, level)) return
         val rem = Service.oilRemaining(this) ?: return
         if (level == 2) {
@@ -805,7 +810,7 @@ class DashActivity : Activity() {
                 tone?.startTone(android.media.ToneGenerator.TONE_PROP_BEEP2, 500)
             } catch (e: Exception) {
             }
-            AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            serviceDialog = AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("🛢 Moy almashtirish vaqti keldi!")
                 .setMessage(
                     if (rem < 0) "Belgilangan probegdan ${-rem} km o'tib ketdi. Iltimos, moyni almashtiring."
@@ -839,12 +844,18 @@ class DashActivity : Activity() {
 
     // =================== Ilova tugmalari (dock) ===================
 
+    private var dockKey = ""
+
     private fun buildDock() {
         if (!::pal.isInitialized) return
-        dockRow.removeAllViews()
         val list = Slots.dock(this)
         val cleaned = list.filter { Slots.isValid(this, it) }
         if (cleaned.size != list.size) Slots.saveDock(this, cleaned)
+        // Hech narsa o'zgarmagan bo'lsa — qayta chizmaymiz (surilgan joy saqlanadi)
+        val key = cleaned.joinToString("|") + "#" + pal.hashCode() + "#" + Service.oilLevel(this)
+        if (key == dockKey && dockRow.childCount > 0) return
+        dockKey = key
+        dockRow.removeAllViews()
         val size = dp(62)
         cleaned.forEachIndexed { i, key ->
             val b = ImageView(this).apply {
@@ -1175,8 +1186,37 @@ class DashActivity : Activity() {
     /** Wi-Fi, Bluetooth va ovoz o'zgarganda tugmachalar yangilanadi. */
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            root.postDelayed({ updateStatus() }, 300)
+            root.postDelayed({
+                updateStatus()
+                onNetworkMaybeBack()
+            }, 300)
         }
+    }
+
+    /** YouTube sahifasi internet yo'qligida ochilmay qolgan bo'lsa. */
+    private var webError = false
+
+    private fun internetAvailable(): Boolean = try {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        if (Build.VERSION.SDK_INT >= 23) {
+            val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+            caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        } else {
+            @Suppress("DEPRECATION")
+            cm.activeNetworkInfo?.isConnected == true
+        }
+    } catch (e: Exception) {
+        false
+    }
+
+    /** Internet qaytganda: YouTube xato sahifasini qayta yuklaymiz, ob-havoni yangilaymiz. */
+    private fun onNetworkMaybeBack() {
+        if (!internetAvailable()) return
+        if (webError) {
+            webError = false
+            web.reload()
+        }
+        refreshWeatherIfNeeded()
     }
 
     // =================== Katta ko'rsatkich: batareya / ovoz ===================
@@ -1913,6 +1953,15 @@ class DashActivity : Activity() {
                 return scheme != "http" && scheme != "https"
             }
 
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
+                super.onReceivedError(view, request, error)
+                // Asosiy sahifa internet yo'qligi sababli ochilmadi — internet qaytganda qayta yuklaymiz
+                if (request.isForMainFrame) {
+                    webError = true
+                    handler.postDelayed({ onNetworkMaybeBack() }, 5000)
+                }
+            }
+
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 view.evaluateJavascript(KEEP_VISIBLE_JS, null)
@@ -2090,11 +2139,15 @@ class DashActivity : Activity() {
             if (firstFix) refreshWeatherIfNeeded()
         }
 
-        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderEnabled(provider: String) {
+            gpsHint.setText(R.string.gps_wait)
+            gpsHint.setOnClickListener(null)
+        }
+
         override fun onProviderDisabled(provider: String) {
             gauge.setSpeed(0f)
-            gpsHint.setText(R.string.gps_wait)
-            gpsHint.visibility = View.VISIBLE
+            gaugeBig.setSpeed(0f)
+            showGpsDisabled()
         }
 
         @Deprecated("Eski Android versiyalari uchun kerak")
@@ -2106,6 +2159,13 @@ class DashActivity : Activity() {
         gaugeBig.setSpeed(0f)
         gpsHint.setText(R.string.gps_wait)
         gpsHint.visibility = View.VISIBLE
+    }
+
+    /** GPS o'chiq bo'lsa — buni aytamiz va bosilganda joylashuv sozlamalarini ochamiz. */
+    private fun showGpsDisabled() {
+        gpsHint.text = "📍 GPS o'chiq — yoqish uchun bosing"
+        gpsHint.visibility = View.VISIBLE
+        gpsHint.setOnClickListener { openSettings(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS) }
     }
 
     private fun startGps() {
@@ -2120,7 +2180,12 @@ class DashActivity : Activity() {
             lm.removeUpdates(locationListener)
             if (lm.allProviders.contains(LocationManager.GPS_PROVIDER)) {
                 lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 500L, 0f, locationListener, Looper.getMainLooper())
+                if (!lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    showGpsDisabled()
+                    return
+                }
                 gpsHint.setText(R.string.gps_wait)
+                gpsHint.setOnClickListener(null)
             } else {
                 gpsHint.setText(R.string.gps_off)
             }
