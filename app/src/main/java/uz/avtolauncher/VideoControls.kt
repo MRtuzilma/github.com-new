@@ -154,10 +154,192 @@ class VideoControls(
         addView(seekHint, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
     }
 
+    // =================== Keyingi videolar (pastdan yuqoriga tortilganda) ===================
+
+    private var sheet: FrameLayout? = null
+    private val sheetHide = Runnable { hideSheet() }
+
+    private fun showSheet() {
+        handler.removeCallbacks(hideRun)
+        setPanel(false)
+        val sh = sheet ?: buildSheet().also { sheet = it }
+        val list = sh.findViewWithTag<LinearLayout>("list")
+        val status = sh.findViewWithTag<TextView>("status")
+        list.removeAllViews()
+        status.text = "Yuklanmoqda…"
+        status.visibility = View.VISIBLE
+        sh.visibility = View.VISIBLE
+        sh.translationY = height * 0.6f
+        sh.animate().translationY(0f).setDuration(220).start()
+        loadRelated(0)
+    }
+
+    private fun hideSheet() {
+        val sh = sheet ?: return
+        handler.removeCallbacks(sheetHide)
+        sh.animate().translationY(height * 0.6f).setDuration(200).withEndAction { sh.visibility = View.GONE }.start()
+    }
+
+    private fun sheetOpen() = sheet?.visibility == View.VISIBLE
+
+    private fun buildSheet(): FrameLayout {
+        val sh = FrameLayout(context)
+        sh.background = GradientDrawable(
+            GradientDrawable.Orientation.BOTTOM_TOP,
+            intArrayOf(0xF0000000.toInt(), 0xD0000000.toInt(), 0x00000000)
+        )
+        sh.isClickable = true
+        val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val title = TextView(context).apply {
+            text = "Keyingi videolar"
+            setTextColor(Color.WHITE)
+            textSize = 17f
+            setPadding(dp(20), dp(40), dp(20), dp(8))
+        }
+        val status = TextView(context).apply {
+            tag = "status"
+            setTextColor(0xAAFFFFFF.toInt())
+            textSize = 14f
+            setPadding(dp(20), dp(10), dp(20), dp(10))
+        }
+        val list = LinearLayout(context).apply {
+            tag = "list"
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(14), 0, dp(14), dp(18))
+        }
+        val scroll = android.widget.HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(list)
+        }
+        col.addView(title)
+        col.addView(status)
+        col.addView(scroll)
+        sh.addView(col, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        // Ro'yxat ustidagi bo'sh joyga tegilsa — yopiladi
+        sh.setOnClickListener { hideSheet() }
+        addView(sh, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        return sh
+    }
+
+    /** Sahifadagi tavsiya etilgan videolarni olamiz (topilmasa — sahifani pastga surib, qayta urinib ko'ramiz). */
+    private fun loadRelated(attempt: Int) {
+        val w = web() ?: return
+        w.evaluateJavascript(
+            "(function(){var cur=(location.search.match(/[?&]v=([^&]+)/)||[])[1];var seen={},out=[];" +
+                    "var as=document.querySelectorAll('a[href*=\"/watch?v=\"]');" +
+                    "for(var i=0;i<as.length&&out.length<24;i++){var a=as[i];var m=a.getAttribute('href').match(/v=([\\w-]{11})/);" +
+                    "if(!m||m[1]===cur||seen[m[1]])continue;" +
+                    "var box=a.closest('ytm-video-with-context-renderer,ytm-compact-video-renderer,ytm-rich-item-renderer,ytm-media-item,ytm-playlist-panel-video-renderer')||a;" +
+                    "var t=box.querySelector('h3,h4,.media-item-headline,.compact-media-item-headline,[class*=\"headline\"],[class*=\"title\"]');" +
+                    "var title=(a.getAttribute('aria-label')||(t&&t.textContent)||a.textContent||'').trim().replace(/\\s+/g,' ');" +
+                    "if(!title)continue;seen[m[1]]=1;out.push({id:m[1],t:title.substring(0,90)});}" +
+                    "if(!out.length){var se=document.scrollingElement||document.documentElement;var y=se.scrollTop;se.scrollTop=y+2500;setTimeout(function(){se.scrollTop=y;},900);}" +
+                    "return JSON.stringify(out);})()"
+        ) { r ->
+            val items = try {
+                val raw = org.json.JSONTokener(r ?: "\"[]\"").nextValue() as? String ?: "[]"
+                val arr = org.json.JSONArray(raw)
+                (0 until arr.length()).map { arr.getJSONObject(it).let { o -> o.getString("id") to o.getString("t") } }
+            } catch (e: Exception) {
+                emptyList()
+            }
+            if (items.isEmpty()) {
+                if (attempt < 2 && sheetOpen()) handler.postDelayed({ loadRelated(attempt + 1) }, 1300)
+                else sheet?.findViewWithTag<TextView>("status")?.text = "Keyingi videolar topilmadi"
+                return@evaluateJavascript
+            }
+            fillSheet(items)
+        }
+    }
+
+    private fun fillSheet(items: List<Pair<String, String>>) {
+        val sh = sheet ?: return
+        sh.findViewWithTag<TextView>("status").visibility = View.GONE
+        val list = sh.findViewWithTag<LinearLayout>("list")
+        list.removeAllViews()
+        val cw = dp(210)
+        val ch = cw * 9 / 16
+        for ((id, title) in items) {
+            val card = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(6), dp(6), dp(6), dp(6))
+                isClickable = true
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(14).toFloat()
+                    setColor(0x22FFFFFF)
+                }
+                setOnClickListener {
+                    playVideo(id)
+                    hideSheet()
+                }
+            }
+            val img = ImageView(context).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                setBackgroundColor(0xFF202020.toInt())
+                clipToOutline = true
+                outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: android.graphics.Outline) {
+                        outline.setRoundRect(0, 0, view.width, view.height, dp(10).toFloat())
+                    }
+                }
+            }
+            val t = TextView(context).apply {
+                text = title
+                setTextColor(Color.WHITE)
+                textSize = 13f
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(2), dp(6), dp(2), 0)
+            }
+            card.addView(img, LinearLayout.LayoutParams(cw, ch))
+            card.addView(t, LinearLayout.LayoutParams(cw, LinearLayout.LayoutParams.WRAP_CONTENT))
+            list.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = dp(10)
+            })
+            loadThumb(id, img)
+        }
+    }
+
+    private fun loadThumb(id: String, into: ImageView) {
+        thumbs.execute {
+            val bmp = try {
+                val c = java.net.URL("https://i.ytimg.com/vi/$id/mqdefault.jpg").openConnection() as java.net.HttpURLConnection
+                c.connectTimeout = 6000
+                c.readTimeout = 6000
+                c.inputStream.use { android.graphics.BitmapFactory.decodeStream(it) }
+            } catch (e: Exception) {
+                null
+            }
+            if (bmp != null) handler.post { into.setImageBitmap(bmp) }
+        }
+    }
+
+    /** Tanlangan videoni qo'yish (sahifa ichidagi havolani bosamiz — YouTube'ning o'zi kabi). */
+    private fun playVideo(id: String) {
+        js(
+            "(function(){var a=document.querySelector('a[href*=\"v=$id\"]');" +
+                    "if(a){a.click();}else{location.href='/watch?v=$id';}" +
+                    "window.__avtoWant=true;})()"
+        )
+    }
+
     private val gestures = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
 
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+            val start = e1 ?: return false
+            val dy = e2.y - start.y
+            if (Math.abs(dy) < dp(50) || Math.abs(vy) < 600 || Math.abs(vx) > Math.abs(vy)) return false
+            if (dy < 0 && !sheetOpen()) showSheet() // pastdan yuqoriga — keyingi videolar
+            else if (dy > 0 && sheetOpen()) hideSheet() // yuqoridan pastga — yopish
+            return true
+        }
+
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            if (sheetOpen()) {
+                hideSheet()
+                return true
+            }
             setPanel(panel.visibility != View.VISIBLE)
             return true
         }
@@ -190,6 +372,7 @@ class VideoControls(
             setPanel(true)
         } else {
             panel.visibility = View.GONE
+            sheet?.visibility = View.GONE
         }
     }
 
@@ -257,6 +440,8 @@ class VideoControls(
     }
 
     companion object {
+        private val thumbs = java.util.concurrent.Executors.newFixedThreadPool(3)
+
         fun lp() = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
     }
 }

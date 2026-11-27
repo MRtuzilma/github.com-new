@@ -119,18 +119,28 @@ class DashActivity : Activity() {
                 '.ytp-cards-teaser, .ytp-pause-overlay, .ytp-suggestion-set, ytm-endscreen-element-renderer' +
                 '{ display: none !important; visibility: hidden !important; pointer-events: none !important; }' +
                 /* html.avto-clip — faqat video klip: pleyer butun oynani egallaydi, sahifaning qolgani ko'rinmaydi */
-                'html.avto-clip body { overflow: hidden !important; }' +
-                'html.avto-clip #player-container-id, html.avto-clip .player-container, html.avto-clip ytm-player,' +
-                'html.avto-clip #player-container-outer, html.avto-clip #player' +
+                'html.avto-clip.avto-watch body { overflow: hidden !important; }' +
+                'html.avto-clip.avto-watch #player-container-id, html.avto-clip.avto-watch .player-container, html.avto-clip.avto-watch ytm-player,' +
+                'html.avto-clip.avto-watch #player-container-outer, html.avto-clip.avto-watch #player' +
                 '{ position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;' +
                 '  width: 100vw !important; height: 100vh !important; max-height: none !important; margin: 0 !important;' +
                 '  padding: 0 !important; z-index: 2147483000 !important; background: #000 !important; transform: none !important; }' +
-                'html.avto-clip #movie_player, html.avto-clip .html5-video-player, html.avto-clip .html5-video-container' +
+                'html.avto-clip.avto-watch #movie_player, html.avto-clip.avto-watch .html5-video-player, html.avto-clip.avto-watch .html5-video-container' +
                 '{ width: 100% !important; height: 100% !important; }' +
-                'html.avto-clip video { width: 100% !important; height: 100% !important; left: 0 !important; top: 0 !important;' +
+                'html.avto-clip.avto-watch video { width: 100% !important; height: 100% !important; left: 0 !important; top: 0 !important;' +
                 '  object-fit: contain !important; }' +
-                'html.avto-clip ytm-mobile-topbar-renderer, html.avto-clip header.mobile-topbar-header,' +
-                'html.avto-clip ytm-pivot-bar-renderer { display: none !important; }' +
+                'html.avto-clip.avto-watch ytm-mobile-topbar-renderer, html.avto-clip.avto-watch header.mobile-topbar-header,' +
+                'html.avto-clip.avto-watch ytm-pivot-bar-renderer { display: none !important; }' +
+                /* Faqat video: YouTube'ning o'z tugmalari ko'rinmaydi, videoga tegish uni to'xtatmaydi */
+                'html.avto-clip.avto-watch .player-controls-content, html.avto-clip.avto-watch .player-controls-background,' +
+                'html.avto-clip.avto-watch .player-controls-top, html.avto-clip.avto-watch .player-controls-bottom,' +
+                'html.avto-clip.avto-watch .player-controls-middle, html.avto-clip.avto-watch ytm-player-controls,' +
+                'html.avto-clip.avto-watch .ytp-chrome-bottom, html.avto-clip.avto-watch .ytp-chrome-top,' +
+                'html.avto-clip.avto-watch .ytp-gradient-bottom, html.avto-clip.avto-watch .ytp-gradient-top,' +
+                'html.avto-clip.avto-watch .ytp-unmute, html.avto-clip.avto-watch .ytm-muted-autoplay-overlay' +
+                '{ display: none !important; }' +
+                'html.avto-clip.avto-watch #player-container-id, html.avto-clip.avto-watch .player-container,' +
+                'html.avto-clip.avto-watch ytm-player { pointer-events: none !important; }' +
                 /* Yuqori panel yashirilganda (html.avto-hide) — faqat video ko'rinadi */
                 'html.avto-hide ytm-mobile-topbar-renderer, html.avto-hide header.mobile-topbar-header' +
                 '{ display: none !important; }' +
@@ -139,6 +149,12 @@ class DashActivity : Activity() {
                 'html.avto-hide #player-container-id, html.avto-hide .player-container, html.avto-hide ytm-player' +
                 '{ top: 0 !important; }';
               document.head.appendChild(st);
+              // Video sahifasidami (watch) — faqat shunda "faqat video" rejimi qo'llanadi
+              var mark = function(){
+                document.documentElement.classList.toggle('avto-watch', /\/(watch|shorts|live)/.test(location.pathname));
+              };
+              mark();
+              setInterval(mark, 700);
             })()
         """
 
@@ -470,6 +486,7 @@ class DashActivity : Activity() {
 
         // Navigator yopilib qolsa — qaytarish
         btnNav.setOnClickListener { bringNavigatorBack() }
+        findViewById<ImageButton>(R.id.btnClock).setOnClickListener { showClockOverlay() }
         btnRestoreNav.setOnClickListener { bringNavigatorBack() }
         // Oddiy ko'rinishga qaytish
         btnRestore.setOnClickListener {
@@ -963,6 +980,10 @@ class DashActivity : Activity() {
         findViewById<CornerMaskView>(R.id.videoMask).setColor(pal.surface)
         btnNav.background = neu(NeuDrawable.OVAL, 0, 3.5f, NeuDrawable.BUTTON)
         btnNav.imageTintList = LauncherTheme.tint(pal.accent)
+        findViewById<ImageButton>(R.id.btnClock).apply {
+            background = neu(NeuDrawable.OVAL, 0, 3.5f, NeuDrawable.BUTTON)
+            imageTintList = LauncherTheme.tint(pal.accent)
+        }
         val pillDepth = dpf(5f)
         val pm = NeuDrawable.margin(pillDepth).toInt()
         for (b in arrayOf(btnRestore, btnRestoreNav)) {
@@ -2186,11 +2207,10 @@ class DashActivity : Activity() {
     }
 
     /** Faqat video klipni ko'rsatish (YouTube sahifasining qolgan qismi yashiriladi). */
+    /** Video sahifasida faqat videoning o'zi ko'rinadi (kichik oynada ham, katta ekranda ham). */
+    @Suppress("UNUSED_PARAMETER")
     private fun setClip(on: Boolean) {
-        web.evaluateJavascript(
-            if (on) "document.documentElement.classList.add('avto-clip');"
-            else "document.documentElement.classList.remove('avto-clip');", null
-        )
+        web.evaluateJavascript("document.documentElement.classList.add('avto-clip');", null)
     }
 
     /** Mashinadagi 📞 tugmasi: YouTube butun ekranga ↔ joyiga. */
@@ -2566,7 +2586,7 @@ class DashActivity : Activity() {
                 view.evaluateJavascript(KEEP_VISIBLE_JS, null)
                 view.evaluateJavascript(YT_CSS_JS, null)
                 view.evaluateJavascript(YT_UPNEXT_JS, null)
-                if (expandStage >= 1 || webAway) setClip(true)
+                setClip(true)
                 handler.removeCallbacks(hideVideoChrome)
                 handler.postDelayed(hideVideoChrome, 4000)
             }
