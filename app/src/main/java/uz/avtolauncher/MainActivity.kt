@@ -33,9 +33,10 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         Diag.log("Bosh ekran: yangi buyruq full=${intent.getBooleanExtra(EXTRA_FULL_VIDEO, false)} video_ochiq=${FullVideoActivity.Link.current != null}")
+        // Eslatma: bu yerda videoni yopmaymiz. Ekran bo'linishidan chiqqanda tizim o'zi "Bosh ekran"
+        // buyrug'ini yuboradi — oldin shu sabab video ochilishi bilan darhol yopilib qolardi.
+        // "Bosh ekran" tugmasi bosilganda video baribir yopiladi (u shu vazifa ichida).
         if (intent.getBooleanExtra(EXTRA_FULL_VIDEO, false)) openFullVideo = true
-        // Video to'liq ekranda turganda "Bosh ekran" bosildi — X kabi kichik oynaga qaytaramiz
-        else if (FullVideoActivity.Link.current != null) FullVideoActivity.Link.close()
     }
 
     override fun onResume() {
@@ -47,8 +48,7 @@ class MainActivity : Activity() {
                 Diag.log("Bosh ekran: to'liq ekranli video oynasi ochilmoqda (multiWindow=${if (android.os.Build.VERSION.SDK_INT >= 24) isInMultiWindowMode else false})")
                 try {
                     startActivity(
-                        Intent(this, FullVideoActivity::class.java)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                        Intent(this, FullVideoActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
                     )
                 } catch (e: Exception) {
                     Diag.log("XATO: video oynasi ochilmadi: $e")
