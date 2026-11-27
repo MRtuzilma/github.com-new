@@ -64,8 +64,8 @@ object LauncherTheme {
             surface = 0xFF23272F.toInt(),
             shadowDark = 0xFF121418.toInt(),
             shadowLight = 0xFF323844.toInt(),
-            text = 0xFFE8ECF2.toInt(),
-            textDim = 0xFF7F8A9A.toInt(),
+            text = 0xFFF7F9FC.toInt(),
+            textDim = 0xFFA8B3C3.toInt(),
             accent = accent,
             isDay = false
         )

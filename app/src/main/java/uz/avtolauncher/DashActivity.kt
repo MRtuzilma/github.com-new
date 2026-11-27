@@ -821,7 +821,8 @@ class DashActivity : Activity() {
             "🔄  Safar hisobini nolga tushirish",
             "🔧  Texnik xizmat daftarchasi",
             "🎵  YouTube fon rejimi: " + (if (bgPlayEnabled()) "yoqiq" else "o'chiq"),
-            "🩺  Diagnostika (xatolarni ko'rish)"
+            "🩺  Diagnostika (xatolarni ko'rish)",
+            "☀️  Yorqinlik: " + brightnessLabel()
         )
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Sozlamalar")
@@ -857,6 +858,7 @@ class DashActivity : Activity() {
                         .setNegativeButton("Yo'q", null).show()
                     7 -> Slots.open(this, Slots.SERVICE)
                     9 -> showDiag()
+                    10 -> pickBrightnessMode()
                     8 -> {
                         val on = !bgPlayEnabled()
                         prefs().edit().putBoolean("bg_play", on).apply()
@@ -869,6 +871,33 @@ class DashActivity : Activity() {
                         ).show()
                     }
                 }
+            }
+            .show()
+    }
+
+    private fun brightnessLabel(): String {
+        val saved = prefs().getFloat("brightness", -1f)
+        return if (saved < 0f) "planshetning o'zi" else "${(saved * 100).toInt()}%"
+    }
+
+    /** Yorqinlik: maksimal yoki planshetning o'z sozlamasi (launcher aralashmaydi). */
+    private fun pickBrightnessMode() {
+        val names = arrayOf("☀️ Maksimal (100%)", "🔆 75%", "🌗 50%", "⚙️ Planshetning o'zi (launcher aralashmaydi)")
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("Yorqinlik")
+            .setItems(names) { _, i ->
+                when (i) {
+                    0 -> setBrightness(1f)
+                    1 -> setBrightness(0.75f)
+                    2 -> setBrightness(0.5f)
+                    3 -> {
+                        prefs().edit().remove("brightness").apply()
+                        window.attributes = window.attributes.apply {
+                            screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                        }
+                    }
+                }
+                if (i < 3) askWriteSettingsOnce()
             }
             .show()
     }
@@ -1169,7 +1198,7 @@ class DashActivity : Activity() {
     private var lastBrightWrite = 0L
 
     /** Ko'z sezishiga mos (perseptual) qiymatdan ekranning chiziqli yorqinligiga. */
-    private fun toLinear(v: Float): Float = Math.pow(v.toDouble(), 2.2).toFloat().coerceIn(0.004f, 1f)
+    private fun toLinear(v: Float): Float = v.coerceIn(0.03f, 1f)
 
     private fun writeSystemBrightness(v: Float) {
         if (!canWriteSettings()) return
@@ -1189,7 +1218,7 @@ class DashActivity : Activity() {
         val saved = prefs().getFloat("brightness", -1f)
         if (saved >= 0f) return saved
         return try {
-            Math.pow(android.provider.Settings.System.getInt(contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS) / 255.0, 1 / 2.2).toFloat()
+            android.provider.Settings.System.getInt(contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS) / 255f
         } catch (e: Exception) {
             0.6f
         }
