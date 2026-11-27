@@ -44,6 +44,12 @@ class NeuDrawable(
     private var raisedBmp: Bitmap? = null
     private var insetBmp: Bitmap? = null
 
+    /** Oxirgi bir necha o'lcham uchun tayyor rasmlar (kattalashtirib-kichraytirganda qayta chizilmaydi). */
+    private val sizeCache = object : LinkedHashMap<Long, Pair<Bitmap?, Bitmap?>>(4, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, Pair<Bitmap?, Bitmap?>>) = size > 3
+    }
+    private var cacheKey = 0L
+
     override fun isStateful() = mode == BUTTON
 
     override fun onStateChange(state: IntArray): Boolean {
@@ -58,8 +64,14 @@ class NeuDrawable(
 
     override fun onBoundsChange(bounds: Rect) {
         super.onBoundsChange(bounds)
-        raisedBmp = null
-        insetBmp = null
+        val key = (bounds.width().toLong() shl 32) or bounds.height().toLong()
+        if (key == cacheKey) return
+        // Eski o'lcham rasmlarini saqlab qo'yamiz, yangisi keshda bo'lsa — darhol olamiz
+        if (cacheKey != 0L && (raisedBmp != null || insetBmp != null)) sizeCache[cacheKey] = raisedBmp to insetBmp
+        cacheKey = key
+        val hit = sizeCache[key]
+        raisedBmp = hit?.first
+        insetBmp = hit?.second
     }
 
     override fun draw(canvas: Canvas) {

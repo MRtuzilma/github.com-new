@@ -111,6 +111,7 @@ class DashActivity : Activity() {
                 'header.mobile-topbar-header button { transform: scale(0.82); transform-origin: center; }' +
                 /* "Keyingisi" (Up next) oynachasi, video oxiridagi tavsiyalar va kartochkalar — ko'rsatilmaydi */
                 'ytm-autonav-endscreen-renderer, .ytm-autonav-endscreen, [class*="autonav-endscreen"],' +
+                '[class*="up-next"], [class*="upnext"], [class*="UpNext"], ytm-autonav-bar, .autonav-bar,' +
                 '.ytp-autonav-endscreen, .ytp-autonav-endscreen-countdown-overlay, .ytp-autonav-overlay,' +
                 '.ytp-upnext, .ytp-upnext-autoplay, .ytp-autonav-toggle-button-container,' +
                 '.ytp-endscreen-content, .html5-endscreen, .videowall-endscreen, .ytp-ce-element,' +
@@ -124,6 +125,50 @@ class DashActivity : Activity() {
                 'html.avto-hide #player-container-id, html.avto-hide .player-container, html.avto-hide ytm-player' +
                 '{ top: 0 !important; }';
               document.head.appendChild(st);
+            })()
+        """
+
+        /**
+         * "Keyingisi" (Up next) oynachasi: YouTube uning nomini tez-tez o'zgartiradi, shuning uchun
+         * klass nomi bo'yicha emas, matni bo'yicha topamiz — video ustida suzib turgan, "Keyingisi /
+         * Up next / Далее" deb yozilgan har qanday kichik oynacha yashiriladi.
+         */
+        private const val YT_UPNEXT_JS = """
+            (function(){
+              if (window.__avtoUN) return; window.__avtoUN = true;
+              var re = /^(keyingisi|keyingi|keyingi video|up next|next up|next|далее|следующее|следующий|следующее видео)\s*[:·]?\s*${'$'}/i;
+              var hide = function(el){
+                el.style.setProperty('display','none','important');
+                el.setAttribute('data-avto-hidden','1');
+              };
+              var floating = function(el){
+                var pos = getComputedStyle(el).position;
+                return pos === 'absolute' || pos === 'fixed' || pos === 'sticky';
+              };
+              var scan = function(){
+                var vw = window.innerWidth * window.innerHeight;
+                var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+                var n, found = [];
+                while ((n = w.nextNode())) {
+                  var t = (n.nodeValue || '').trim();
+                  if (t.length > 2 && t.length < 24 && re.test(t)) found.push(n.parentElement);
+                }
+                found.forEach(function(el){
+                  // Video ustida suzib turgan eng katta (lekin ekrandan ancha kichik) ota-elementni topamiz
+                  var target = null, cur = el, depth = 0;
+                  while (cur && cur !== document.body && depth < 8) {
+                    if (cur.tagName === 'VIDEO' || cur.querySelector && cur.querySelector('video')) break;
+                    var r = cur.getBoundingClientRect();
+                    if (floating(cur) && r.width * r.height < vw * 0.5) target = cur;
+                    cur = cur.parentElement; depth++;
+                  }
+                  if (target) hide(target);
+                });
+              };
+              var t = 0;
+              var later = function(){ if (t) return; t = setTimeout(function(){ t = 0; try { scan(); } catch(e) {} }, 400); };
+              try { new MutationObserver(later).observe(document.documentElement, {childList: true, subtree: true, characterData: true}); } catch(e) {}
+              later();
             })()
         """
 
@@ -320,6 +365,7 @@ class DashActivity : Activity() {
         videoCard = findViewById(R.id.videoCard)
         videoClip = findViewById(R.id.videoClip)
         web = findViewById(R.id.web)
+        watchSystemBars()
         (web as? BgWebView)?.keepAlive = { bgPlayEnabled() && ytPlaying }
         fullHolder = findViewById(R.id.fullHolder)
         infoSwipe = findViewById(R.id.infoSwipe)
@@ -470,6 +516,7 @@ class DashActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        hideSystemBars()
         buildDock()
         refreshWeatherIfNeeded()
         updateStatus()
@@ -534,6 +581,7 @@ class DashActivity : Activity() {
     }
 
     override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: android.content.res.Configuration) {
+        handler.postDelayed(reHideBars, 500)
         super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
         updateRestoreBar()
         if (isInMultiWindowMode) {
@@ -545,6 +593,29 @@ class DashActivity : Activity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) hideSystemBars()
+    }
+
+    private val reHideBars = Runnable { if (!isFinishing) hideSystemBars() }
+
+    /** Panel (holat qatori / pastki tugmalar) chiqib qolsa — 3 soniyadan keyin yana yashiramiz. */
+    private fun watchSystemBars() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.decorView.setOnApplyWindowInsetsListener { v, insets ->
+                if (insets.isVisible(WindowInsets.Type.statusBars()) || insets.isVisible(WindowInsets.Type.navigationBars())) {
+                    handler.removeCallbacks(reHideBars)
+                    handler.postDelayed(reHideBars, 3000)
+                }
+                v.onApplyWindowInsets(insets)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.setOnSystemUiVisibilityChangeListener { vis ->
+                if (vis and View.SYSTEM_UI_FLAG_FULLSCREEN == 0) {
+                    handler.removeCallbacks(reHideBars)
+                    handler.postDelayed(reHideBars, 3000)
+                }
+            }
+        }
     }
 
     @Deprecated("Activity API")
@@ -2030,6 +2101,7 @@ class DashActivity : Activity() {
                 super.onPageFinished(view, url)
                 view.evaluateJavascript(KEEP_VISIBLE_JS, null)
                 view.evaluateJavascript(YT_CSS_JS, null)
+                view.evaluateJavascript(YT_UPNEXT_JS, null)
                 handler.removeCallbacks(hideVideoChrome)
                 handler.postDelayed(hideVideoChrome, 4000)
             }
@@ -2064,7 +2136,10 @@ class DashActivity : Activity() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
                 super.onProgressChanged(view, newProgress)
                 if (newProgress in 10..100) view.evaluateJavascript(KEEP_VISIBLE_JS, null)
-                if (newProgress >= 50) view.evaluateJavascript(YT_CSS_JS, null)
+                if (newProgress >= 50) {
+                    view.evaluateJavascript(YT_CSS_JS, null)
+                    view.evaluateJavascript(YT_UPNEXT_JS, null)
+                }
             }
         }
         if (Build.VERSION.SDK_INT >= 26) {
@@ -2088,6 +2163,7 @@ class DashActivity : Activity() {
 
     /** YouTube butun oynani egallaydi (alohida ekrandek). */
     private fun setExpanded(on: Boolean) {
+        if (expanded == on && infoSwipe.visibility == (if (on) View.GONE else View.VISIBLE)) return
         expanded = on
         infoSwipe.visibility = if (on) View.GONE else View.VISIBLE
         updateRestoreBar()
