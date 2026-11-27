@@ -115,10 +115,28 @@ class DashActivity : Activity() {
                 '.ytp-upnext, .ytp-upnext-autoplay, .ytp-autonav-toggle-button-container,' +
                 '.ytp-endscreen-content, .html5-endscreen, .videowall-endscreen, .ytp-ce-element,' +
                 '.ytp-cards-teaser, .ytp-pause-overlay, .ytp-suggestion-set, ytm-endscreen-element-renderer' +
-                '{ display: none !important; visibility: hidden !important; pointer-events: none !important; }';
+                '{ display: none !important; visibility: hidden !important; pointer-events: none !important; }' +
+                /* Yuqori panel yashirilganda (html.avto-hide) — faqat video ko'rinadi */
+                'html.avto-hide ytm-mobile-topbar-renderer, html.avto-hide header.mobile-topbar-header' +
+                '{ display: none !important; }' +
+                'html.avto-hide .page-container, html.avto-hide #page-manager, html.avto-hide ytm-app' +
+                '{ margin-top: 0 !important; padding-top: 0 !important; }' +
+                'html.avto-hide #player-container-id, html.avto-hide .player-container, html.avto-hide ytm-player' +
+                '{ top: 0 !important; }';
               document.head.appendChild(st);
             })()
         """
+
+        /** YouTube yuqori panelini yashirish (qidiruv maydonida yozilayotgan bo'lsa — yashirmaymiz). */
+        private const val YT_HIDE_BAR_JS = """
+            (function(){
+              var a = document.activeElement;
+              if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')) return;
+              document.documentElement.classList.add('avto-hide');
+            })()
+        """
+
+        private const val YT_SHOW_BAR_JS = "document.documentElement.classList.remove('avto-hide');"
 
         private const val KEEP_VISIBLE_JS = """
             (function(){
@@ -1181,8 +1199,12 @@ class DashActivity : Activity() {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
+            // FLAG_NOT_FOCUSABLE: fokus launcherda qoladi — shunda launcher planshetning
+            // holat qatori va pastki panelini yashira oladi (immersive rejim)
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                     WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
             android.graphics.PixelFormat.OPAQUE
         )
@@ -1195,7 +1217,15 @@ class DashActivity : Activity() {
         return try {
             wm.addView(root, lp)
             overlayRoot = root
-            root.requestFocus()
+            hideSystemBars()
+            if (Build.VERSION.SDK_INT >= 30) {
+                root.post {
+                    root.windowInsetsController?.let {
+                        it.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                        it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    }
+                }
+            }
             root
         } catch (e: Exception) {
             null
@@ -1441,15 +1471,24 @@ class DashActivity : Activity() {
 
     // =================== YouTube ===================
 
-    private val fadeVideoButtons = Runnable {
-        videoBtns.animate().alpha(0.25f).setDuration(400).start()
+    /**
+     * YouTube'ning yuqori paneli (qidiruv va h.k.) va launcherning video tugmalari odatda yashirin turadi —
+     * faqat video ko'rinadi. Video ustiga bosilsa, 4 soniyaga chiqadi.
+     */
+    private val hideVideoChrome = Runnable {
+        videoBtns.animate().alpha(0f).setDuration(300).withEndAction {
+            videoBtns.visibility = View.INVISIBLE
+        }.start()
+        web.evaluateJavascript(YT_HIDE_BAR_JS, null)
     }
 
     private fun showVideoButtons() {
-        handler.removeCallbacks(fadeVideoButtons)
+        handler.removeCallbacks(hideVideoChrome)
         videoBtns.animate().cancel()
+        videoBtns.visibility = View.VISIBLE
         videoBtns.alpha = 1f
-        handler.postDelayed(fadeVideoButtons, 3000)
+        web.evaluateJavascript(YT_SHOW_BAR_JS, null)
+        handler.postDelayed(hideVideoChrome, 4000)
     }
 
     private fun setupVideo(state: Bundle?) {
@@ -1480,6 +1519,8 @@ class DashActivity : Activity() {
                 super.onPageFinished(view, url)
                 view.evaluateJavascript(KEEP_VISIBLE_JS, null)
                 view.evaluateJavascript(YT_CSS_JS, null)
+                handler.removeCallbacks(hideVideoChrome)
+                handler.postDelayed(hideVideoChrome, 4000)
             }
 
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
@@ -1520,8 +1561,8 @@ class DashActivity : Activity() {
             web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
         }
         web.settings.javaScriptCanOpenWindowsAutomatically = false
-        web.setOnTouchListener { _, _ ->
-            showVideoButtons()
+        web.setOnTouchListener { _, e ->
+            if (e.actionMasked == android.view.MotionEvent.ACTION_DOWN) showVideoButtons()
             false
         }
         showVideoButtons()
