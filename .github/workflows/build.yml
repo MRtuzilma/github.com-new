@@ -20,13 +20,13 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk AvtoLauncher.apk
+          cp app/build/outputs/apk/debug/app-debug.apk AvtoDash.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: AvtoLauncher-apk
-          path: AvtoLauncher.apk
+          name: AvtoDash-apk
+          path: AvtoDash.apk
       - name: Release (yuklab olish havolasi)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v5.9.${{ github.run_number }}" AvtoLauncher.apk --title "Avto Launcher v5.9.${{ github.run_number }}" --notes "Planshetga o'rnatish uchun AvtoLauncher.apk faylini yuklab oling." --latest
+          gh release create "avtodash-v1.0.${{ github.run_number }}" AvtoDash.apk --title "AvtoDash v1.0.${{ github.run_number }}" --notes "Planshetga o'rnatish uchun AvtoDash.apk faylini yuklab oling." --latest
