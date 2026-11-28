@@ -71,6 +71,11 @@
 
         <!-- Texnik xizmat daftarchasi -->
         <activity
+            android:name=".MileageActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard"
+            android:exported="false" />
+
+        <activity
             android:name=".ServiceActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard"
             android:exported="false"

@@ -93,5 +93,32 @@ object Trip {
             .putLong("moving_ms", p.getLong("moving_ms", 0L) + dt)
             .putFloat("max_kmh", maxOf(p.getFloat("max_kmh", 0f), kmh))
             .apply()
+        addDaily(ctx, km)
     }
+
+    // =================== Kunlik tarix (diagramma uchun) ===================
+
+    private fun dayKey(t: Long = System.currentTimeMillis()): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(t))
+
+    private fun history(ctx: Context) = ctx.getSharedPreferences("km_daily", Context.MODE_PRIVATE)
+
+    private fun addDaily(ctx: Context, km: Double) {
+        val h = history(ctx)
+        val k = dayKey()
+        h.edit().putFloat(k, h.getFloat(k, 0f) + km.toFloat()).apply()
+    }
+
+    /** Kunlik yurilgan yo'l: "yyyy-MM-dd" → km. */
+    fun daily(ctx: Context): Map<String, Float> {
+        val h = history(ctx)
+        // Birinchi marta: bugungi hisobni tarixga ko'chiramiz
+        if (h.all.isEmpty()) {
+            val st = stats(ctx)
+            if (st.todayKm > 0) h.edit().putFloat(dayKey(), st.todayKm.toFloat()).apply()
+        }
+        return h.all.mapNotNull { (k, v) -> (v as? Float)?.let { k to it } }.toMap()
+    }
+
+    fun dayKeyOf(t: Long) = dayKey(t)
 }

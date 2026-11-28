@@ -1021,6 +1021,7 @@ class DashActivity : Activity() {
         gaugeBig.setPalette(pal)
         gauge.limit = speedLimit()
         gaugeBig.limit = speedLimit()
+        SpeedZone.onChange = { applySpeedLimit() }
         for (b in arrayOf(btnBt, btnBtTrip)) {
             b.background = neu(NeuDrawable.OVAL, 0, 3.5f, NeuDrawable.BUTTON)
             b.setTextColor(pal.accent)
@@ -1066,11 +1067,11 @@ class DashActivity : Activity() {
     }
 
     private fun showThemeMenu() {
-        val limit = speedLimit()
+        val limit = speedLimitSetting()
         val items = arrayOf(
             "🎨  Rang: " + LauncherTheme.ACCENT_NAMES[LauncherTheme.accentIndex(this)],
             "🌓  Rejim: " + LauncherTheme.MODE_NAMES[LauncherTheme.mode(this)],
-            "🚦  Tezlik ogohlantirishi: " + (if (limit == 0) "o'chiq" else "$limit km/soat"),
+            "🚦  Tezlik ogohlantirishi: " + when (limit) { -1 -> "avto (hudud bo'yicha)"; 0 -> "o'chiq"; else -> "$limit km/soat" },
             "🏠  Hozirgi joyni Uy deb saqlash",
             "💼  Hozirgi joyni Ish deb saqlash",
             "🧭  Navigator'ni yonida ochish",
@@ -1184,16 +1185,55 @@ class DashActivity : Activity() {
 
     private val speedLimits = intArrayOf(0, 40, 60, 70, 80, 90, 100, 110, 120)
 
-    private fun speedLimit() = prefs().getInt("speed_limit", 0)
+    /** Sozlama: -1 — avto (hudud bo'yicha), 0 — o'chiq, boshqasi — qo'lda tanlangan chegara. */
+    private fun speedLimitSetting(): Int {
+        val p = prefs()
+        if (!p.getBoolean("speed_auto_migrated", false)) {
+            p.edit().putBoolean("speed_auto_migrated", true).putInt("speed_limit", -1).apply()
+        }
+        return p.getInt("speed_limit", -1)
+    }
+
+    /** Hozir amaldagi chegara (avto rejimda — hudud bo'yicha; hudud hali noma'lum bo'lsa — ogohlantirilmaydi). */
+    private fun speedLimit(): Int {
+        val s = speedLimitSetting()
+        return if (s == -1) SpeedZone.zone?.limit ?: 0 else s
+    }
+
+    private fun applySpeedLimit() {
+        gauge.limit = speedLimit()
+        gaugeBig.limit = speedLimit()
+        showZoneHint()
+    }
+
+    /** Spidometr ostida hudud: "🏙 Shahar · 60" (avto rejimda, GPS ishlayotganda). */
+    private fun showZoneHint() {
+        if (lastLocation == null) return
+        val z = SpeedZone.zone
+        if (speedLimitSetting() == -1 && z != null) {
+            gpsHint.text = "${z.label} · ${z.limit}"
+            gpsHint.setOnClickListener { pickSpeedLimit() }
+            gpsHint.visibility = View.VISIBLE
+        } else {
+            gpsHint.visibility = View.GONE
+        }
+    }
 
     private fun pickSpeedLimit() {
-        val names = speedLimits.map { if (it == 0) "O'chiq" else "$it km/soat" }.toTypedArray()
+        val values = intArrayOf(-1) + speedLimits
+        val names = values.map {
+            when (it) {
+                -1 -> "🗺 Avto: shahar 60 · aholi punkti 70 · aholisiz joy 90 · trassa 100"
+                0 -> "O'chiq"
+                else -> "$it km/soat"
+            }
+        }.toTypedArray()
         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
             .setTitle("Tezlik oshsa ogohlantirish")
-            .setSingleChoiceItems(names, speedLimits.indexOf(speedLimit()).coerceAtLeast(0)) { d, i ->
-                prefs().edit().putInt("speed_limit", speedLimits[i]).apply()
-                gauge.limit = speedLimits[i]
-                gaugeBig.limit = speedLimits[i]
+            .setSingleChoiceItems(names, values.indexOf(speedLimitSetting()).coerceAtLeast(0)) { d, i ->
+                prefs().edit().putInt("speed_limit", values[i]).apply()
+                if (values[i] == -1) lastLocation?.let { SpeedZone.onLocation(it) }
+                applySpeedLimit()
                 d.dismiss()
             }
             .show()
@@ -1945,6 +1985,10 @@ class DashActivity : Activity() {
                 }
                 tile.addView(value, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
                 tile.addView(cap)
+                if (key == "today" || key == "total") {
+                    // Bosilganda — kamida 1 yillik yurilgan yo'l diagrammasi butun ekranda
+                    tile.setOnClickListener { startActivity(Intent(this, MileageActivity::class.java)) }
+                }
                 if (key == "trip") {
                     tile.setOnLongClickListener {
                         AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
@@ -2917,6 +2961,7 @@ class DashActivity : Activity() {
             val kmh = if (location.hasSpeed()) location.speed * 3.6f else 0f
             gauge.setSpeed(if (kmh < 2f) 0f else kmh)
             gaugeBig.setSpeed(if (kmh < 2f) 0f else kmh)
+            if (speedLimitSetting() == -1) SpeedZone.onLocation(location)
             checkSpeed(kmh)
             // Masofa va tezlik statistikasi faqat mashina Bluetooth'iga ulanganda hisoblanadi
             if (carConnected()) {
@@ -2928,7 +2973,11 @@ class DashActivity : Activity() {
                 compassArrow.rotation = location.bearing
                 compassText.text = Weather.direction(location.bearing)
             }
-            gpsHint.visibility = View.GONE
+            if (firstFix || gpsHint.text.startsWith("📍") || gpsHint.text == getString(R.string.gps_wait)) {
+                gpsHint.setOnClickListener(null)
+                gpsHint.visibility = View.GONE
+                showZoneHint()
+            }
             handler.removeCallbacks(gpsTimeout)
             handler.postDelayed(gpsTimeout, GPS_TIMEOUT_MS)
             if (firstFix) refreshWeatherIfNeeded()
