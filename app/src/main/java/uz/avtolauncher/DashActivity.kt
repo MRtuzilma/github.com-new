@@ -551,6 +551,7 @@ class DashActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(batteryReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         else registerReceiver(batteryReceiver, filter)
         handler.post(themeCheck)
+        if (internetAvailable()) SpeedZone.updateIfDue(this)
         web.onResume()
         web.resumeTimers()
         handler.postDelayed(webWatch, 4000)
@@ -1022,6 +1023,7 @@ class DashActivity : Activity() {
         gauge.limit = speedLimit()
         gaugeBig.limit = speedLimit()
         SpeedZone.onChange = { applySpeedLimit() }
+        SpeedZone.init(this)
         for (b in arrayOf(btnBt, btnBtTrip)) {
             b.background = neu(NeuDrawable.OVAL, 0, 3.5f, NeuDrawable.BUTTON)
             b.setTextColor(pal.accent)
@@ -1162,7 +1164,7 @@ class DashActivity : Activity() {
     private fun showDiag() {
         val mw = if (Build.VERSION.SDK_INT >= 24) isInMultiWindowMode else false
         val head = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}\n" +
-                "Ekran bo'lingan: ${if (mw) "ha" else "yo'q"} · Navigator: ${Slots.navigatorPackage(this) ?: "yo'q"}\n" +
+                "Oflayn xarita: ${SpeedZone.info}\n" + "Ekran bo'lingan: ${if (mw) "ha" else "yo'q"} · Navigator: ${Slots.navigatorPackage(this) ?: "yo'q"}\n" +
                 "Ilova versiyasi: " + (try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "?" }) + "\n\n"
         val tv = TextView(this).apply {
             text = head + Diag.text().ifEmpty { "(hali yozuv yo'q)" }
@@ -1223,7 +1225,7 @@ class DashActivity : Activity() {
         val values = intArrayOf(-1) + speedLimits
         val names = values.map {
             when (it) {
-                -1 -> "🗺 Avto: shahar 60 · aholi punkti 70 · aholisiz joy 90 · trassa 100"
+                -1 -> "🗺 Avto (oflayn xarita): shahar 60 · aholi punkti 70 · aholisiz joy 90 · trassa 100"
                 0 -> "O'chiq"
                 else -> "$it km/soat"
             }
@@ -1822,6 +1824,7 @@ class DashActivity : Activity() {
             web.reload()
         }
         refreshWeatherIfNeeded()
+        SpeedZone.updateIfDue(this)
     }
 
     // =================== Katta ko'rsatkich: batareya / ovoz ===================
