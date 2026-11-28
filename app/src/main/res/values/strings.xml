@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AvtoDash</string>
+    <string name="app_name">Avto Launcher</string>
     <string name="kmh">km/soat</string>
     <string name="no_music">Musiqa</string>
     <string name="media_permission">Qo\'shiq nomini ko\'rsatish uchun shu yerga bosib ruxsat bering</string>

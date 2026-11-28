@@ -553,7 +553,7 @@ class DashActivity : Activity() {
         handler.post(themeCheck)
         web.onResume()
         web.resumeTimers()
-        // (Davriy "nazoratchi" olib tashlandi: sekin planshetda YouTube'ni keraksiz qayta yuklab, xato chiqarardi)
+        handler.postDelayed(webWatch, 4000)
         BgPlayService.stop(this) // launcher ko'rinib turibdi — fon xizmati kerak emas
         val tf = IntentFilter().apply {
             addAction(Intent.ACTION_TIME_TICK)
@@ -631,7 +631,7 @@ class DashActivity : Activity() {
         }
         handler.removeCallbacks(statsTick)
         // Ekran butunlay ko'rinmay qolganda video to'xtaydi. Navigator yonida tursa — to'xtamaydi.
-        web.url?.takeIf { it.startsWith("http") && "youtube.com" in it }?.let { prefs().edit().putString("url", it).apply() }
+        web.url?.let { prefs().edit().putString("url", it).apply() }
         if (!webAway) {
             if (bgPlayEnabled() && ytPlaying && !isFinishing) {
                 // Fon rejimi: WebView to'xtatilmaydi, musiqa davom etadi
@@ -759,7 +759,7 @@ class DashActivity : Activity() {
                     .setTitle("🕒 Soat butun ekranda")
                     .setMessage(
                         "Soat Navigator ustida ham ko'rinishi uchun planshet ruxsati kerak.\n\n" +
-                                "«Ruxsat berish» ni bosing → ochilgan ro'yxatda AvtoDash → " +
+                                "«Ruxsat berish» ni bosing → ochilgan ro'yxatda Avto Launcher → " +
                                 "«Поверх других приложений / Boshqa ilovalar ustida» ni YOQING → orqaga qayting."
                     )
                     .setPositiveButton("Ruxsat berish") { _, _ -> openOverlaySettings() }
@@ -1779,36 +1779,9 @@ class DashActivity : Activity() {
         if (!internetAvailable()) return
         if (webError) {
             webError = false
-            handler.removeCallbacks(offlineRetry)
-            Diag.log("Internet qaytdi — YouTube qayta yuklanmoqda")
-            web.loadUrl(failedUrl ?: prefs().getString("url", YT_HOME) ?: YT_HOME)
+            web.reload()
         }
         refreshWeatherIfNeeded()
-    }
-
-    /** Ochilmay qolgan sahifa manzili (internet qaytganda shu qayta ochiladi). */
-    private var failedUrl: String? = null
-
-    /** Internet yo'q paytda har 8 soniyada qayta urinib ko'ramiz (iPhone modem uyg'onguncha va h.k.). */
-    private val offlineRetry = object : Runnable {
-        override fun run() {
-            if (!webError || isFinishing) return
-            if (internetAvailable()) onNetworkMaybeBack()
-            else handler.postDelayed(this, 8000)
-        }
-    }
-
-    /** Chrome'ning xunuk xato sahifasi o'rniga — launcher uslubidagi qisqa xabar. */
-    private fun showOffline(url: String) {
-        failedUrl = url
-        webError = true
-        val html = "<html><body style='margin:0;background:#000;color:#cfd6df;font-family:sans-serif;" +
-                "display:flex;align-items:center;justify-content:center;height:100vh;text-align:center'>" +
-                "<div><div style='font-size:42px'>📶</div><div style='font-size:18px;margin-top:10px'>Internet yo'q</div>" +
-                "<div style='font-size:13px;opacity:.6;margin-top:6px'>Ulanish tiklanishi bilan YouTube o'zi ochiladi</div></div></body></html>"
-        web.loadDataWithBaseURL("about:blank", html, "text/html", "utf-8", null)
-        handler.removeCallbacks(offlineRetry)
-        handler.postDelayed(offlineRetry, 8000)
     }
 
     // =================== Katta ko'rsatkich: batareya / ovoz ===================
@@ -2079,7 +2052,7 @@ class DashActivity : Activity() {
             .setTitle("Butun ekranli video")
             .setMessage(
                 "Video butun ekranga, Navigator ustiga ham chiqishi uchun «Boshqa ilovalar ustida ko'rsatish» " +
-                        "ruxsati kerak.\n\nKeyingi oynada AvtoDash'ga ruxsat bering va orqaga qayting."
+                        "ruxsati kerak.\n\nKeyingi oynada Avto Launcher'ga ruxsat bering va orqaga qayting."
             )
             .setPositiveButton("Ruxsat berish") { _, _ ->
                 try {
@@ -2739,10 +2712,8 @@ class DashActivity : Activity() {
 
             /** YouTube jarayoni xotira yetmay o'chib qolsa — ilova yopilmaydi, YouTube qaytadan yuklanadi. */
             override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
-                Diag.log("YouTube jarayoni to'xtadi (xotira?) — launcher qayta ochiladi")
-                // To'xtagan WebView'ni qayta ishlatib bo'lmaydi — launcher oynasini toza holda qayta yaratamiz
-                if (webAway) FullVideoActivity.Link.close()
-                handler.post { if (!isFinishing) recreate() }
+                Diag.log("YouTube jarayoni to'xtadi (xotira?) — qayta yuklanadi")
+                handler.post { rebuildWeb() }
                 return true
             }
 
@@ -2750,9 +2721,8 @@ class DashActivity : Activity() {
                 super.onReceivedError(view, request, error)
                 // Asosiy sahifa internet yo'qligi sababli ochilmadi — internet qaytganda qayta yuklaymiz
                 if (request.isForMainFrame) {
-                    val u = request.url.toString()
-                    Diag.log("YouTube ochilmadi (${error.errorCode}): ${error.description}")
-                    if (u.startsWith("http")) showOffline(u)
+                    webError = true
+                    handler.postDelayed({ onNetworkMaybeBack() }, 5000)
                 }
             }
 
@@ -2910,7 +2880,7 @@ class DashActivity : Activity() {
                 "Planshet Navigator'ni avtomatik yonma-yon qo'ya olmadi. Bir marta qo'lda qiling:\n\n" +
                         "1. «Oxirgi ilovalar» (□) tugmasini bosing.\n" +
                         "2. Yandex Navigator oynasi tepasidagi ikonkani bosing → «Ekranni bo'lish».\n" +
-                        "3. Ikkinchi yarmiga «AvtoDash»ni tanlang.\n" +
+                        "3. Ikkinchi yarmiga «Avto Launcher»ni tanlang.\n" +
                         "4. O'rtadagi chiziqni surib, o'lchamni sozlang.\n\n" +
                         "Keyinroq qayta urinish: 🎨 → «Navigator'ni yonida ochish»."
             )
